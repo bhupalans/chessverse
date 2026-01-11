@@ -4,41 +4,38 @@ import { cn } from '@/lib/utils';
 import { type Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
+import { Chess as ChessGame } from 'chess.js';
 
 export function Chessboard({
-  game,
   fen,
   onMove,
-  isBotGame,
   gameStarted,
   isEngineLoading,
   playerColor,
   isGameOver,
+  turn,
 }: {
-  game: Chess;
   fen: string;
   onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
-  isBotGame: boolean;
   gameStarted: boolean;
   isEngineLoading: boolean;
   playerColor: Color;
   isGameOver: boolean;
+  turn: Color;
 }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
 
-  const board = useMemo(() => {
-    const tempGame = new (game.constructor as typeof Chess)(fen);
-    return tempGame.board();
-  }, [fen, game.constructor]);
+  const game = useMemo(() => new ChessGame(fen), [fen]);
+  const board = useMemo(() => game.board(), [game]);
   
   const handleSquareClick = (row: number, col: number) => {
     if (!gameStarted) {
       toast({
         title: 'Game Not Started',
-        description: 'Click "Start Game" to begin the match.',
+        description: 'The game will begin when both players are ready.',
       });
       return;
     }
@@ -61,7 +58,8 @@ export function Chessboard({
       return;
     }
 
-    if(isBotGame && game.turn() !== playerColor){
+    if(turn !== playerColor){
+        toast({ title: "Not your turn", description: "Please wait for your opponent to move."});
         return;
     }
 
@@ -75,8 +73,10 @@ export function Chessboard({
       setSelectedSquare(null);
     } else {
       const piece = game.get(square);
-      if (piece && piece.color === game.turn() && piece.color === playerColor) {
+      if (piece && piece.color === turn && piece.color === playerColor) {
         setSelectedSquare(square);
+      } else if (piece && piece.color !== playerColor) {
+        toast({ title: "Wait for your turn", description: "You can't move your opponent's pieces." });
       }
     }
   };
@@ -113,7 +113,7 @@ export function Chessboard({
               squareName = String.fromCharCode('a'.charCodeAt(0) + (7-colIndex)) + (rowIndex + 1) as ChessJsSquare;
             }
             
-            const pieceOnSquare = game.get(squareName);
+            const pieceOnSquare = piece;
 
             const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
             const isSelected = selectedSquare === squareName;

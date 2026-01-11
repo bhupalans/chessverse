@@ -25,6 +25,10 @@ export type Game = {
   player2?: Player;
   status: GameStatus;
   eloGain?: number;
+  fen: string;
+  turn: 'w' | 'b';
+  moves: string[];
+  winner?: 'w' | 'b' | 'd'; // d for draw
 };
 
 export type HistoryGame = {

@@ -22,7 +22,7 @@ export const PlayerCard = ({
     <div className="flex items-center gap-3">
       <Avatar>
         <AvatarImage src={avatar} />
-        <AvatarFallback>{name.charAt(0)}</AvatarFallback>
+        <AvatarFallback>{name ? name.charAt(0) : '?'}</AvatarFallback>
       </Avatar>
       <div>
         <div className="flex items-center gap-2">
@@ -36,7 +36,7 @@ export const PlayerCard = ({
     {isTurn && (
       <div className="flex items-center gap-2 text-primary">
         <Timer className="h-5 w-5" />
-        <span className="font-bold">04:30</span>
+        <span className="font-bold">Thinking...</span>
       </div>
     )}
   </div>
