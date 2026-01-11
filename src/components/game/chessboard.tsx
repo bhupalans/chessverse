@@ -32,7 +32,7 @@ export function Chessboard({
   const board = useMemo(() => game.board(), [game]);
   
   const handleSquareClick = (row: number, col: number) => {
-    if (!gameStarted) {
+    if (!gameStarted && !isGameOver) {
       toast({
         title: 'Game Not Started',
         description: 'The game will begin when both players are ready.',
@@ -95,7 +95,6 @@ export function Chessboard({
   return (
     <div className={cn(
       "grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] aspect-square w-full max-w-lg rounded-lg overflow-hidden shadow-2xl",
-      (!gameStarted || isGameOver) && "opacity-60 cursor-not-allowed"
     )}>
       <div className="flex flex-col text-xs font-bold text-muted-foreground pr-1">
         {ranks.map((rank) => (
@@ -103,7 +102,7 @@ export function Chessboard({
         ))}
       </div>
       
-      <div className="grid grid-cols-8 grid-rows-8">
+      <div className={cn("grid grid-cols-8 grid-rows-8", (isGameOver || !gameStarted) && "opacity-50")}>
         {boardToRender.map((row, rowIndex) =>
           row.map((piece, colIndex) => {
             let squareName: ChessJsSquare;
