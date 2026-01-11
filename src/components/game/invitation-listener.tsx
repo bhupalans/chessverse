@@ -86,9 +86,6 @@ export function InvitationListener() {
             ) as ToastActionElement,
             onClose: () => {
               displayedToasts.current.delete(invitation.id);
-            },
-            onDismiss: () => {
-              displayedToasts.current.delete(invitation.id);
             }
           });
 
