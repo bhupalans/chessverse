@@ -54,9 +54,30 @@
         "timeControl": {
           "type": "string",
           "description": "The time control for the game (e.g., '10+5')."
+        },
+        "fen": {
+            "type": "string",
+            "description": "The current board state in Forsyth-Edwards Notation."
+        },
+        "turn": {
+            "type": "string",
+            "enum": ["w", "b"],
+            "description": "Whose turn it is (white 'w' or black 'b')."
+        },
+        "whiteClock": {
+            "type": "number",
+            "description": "Remaining time for the white player in seconds."
+        },
+        "blackClock": {
+            "type": "number",
+            "description": "Remaining time for the black player in seconds."
+        },
+        "lastMove": {
+            "type": "string",
+            "description": "The last move made in Standard Algebraic Notation (e.g. 'e4')."
         }
       },
-      "required": ["whiteUid", "status", "timeControl"]
+      "required": ["whiteUid", "status", "timeControl", "fen", "turn", "whiteClock", "blackClock"]
     },
     "Move": {
       "title": "Move",
