@@ -68,9 +68,11 @@ function GamePageContent() {
                   setHistory(game.history({ verbose: true }).map(move => move.san));
                 }
               }
+              if (e.data === 'uciok') {
+                setIsEngineLoading(false);
+              }
             });
             sf.postMessage('uci');
-            setIsEngineLoading(false);
         }
       };
       document.body.appendChild(script);
