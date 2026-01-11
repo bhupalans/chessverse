@@ -1,10 +1,11 @@
+
 'use client';
 
 import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
+import { Chess, type Square as ChessJsSquare, type Color, type Move } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -57,6 +58,14 @@ function GamePageContent() {
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
 
+  // Sound playing utility
+  const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
+    if (typeof window !== 'undefined') {
+      const audio = new Audio(`/sounds/${sound}.mp3`);
+      audio.play().catch(e => console.error(`Failed to play ${sound}.mp3`, e));
+    }
+  }, []);
+
   useEffect(() => {
     if (gameData?.fen) {
       localGame.load(gameData.fen);
@@ -86,7 +95,12 @@ function GamePageContent() {
               if (e.data?.startsWith('bestmove')) {
                 const bestMove = e.data.split(' ')[1];
                 if (bestMove && localGame.turn() === opponentColor) {
-                  localGame.move(bestMove, { sloppy: true });
+                  const moveResult = localGame.move(bestMove, { sloppy: true });
+                  if (moveResult) {
+                    if (moveResult.flags.includes('c')) playSound('capture');
+                    else playSound('move');
+                    if (localGame.inCheck()) playSound('check');
+                  }
                   setFen(localGame.fen());
                   if (localGame.isGameOver()) {
                     handleGameOver(localGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
@@ -111,7 +125,7 @@ function GamePageContent() {
         }
       };
     }
-  }, [isBotGame, localGame, opponentColor]);
+  }, [isBotGame, localGame, opponentColor, playSound]);
 
   const isGameOver = useMemo(() => gameData?.status === 'completed' || localGame.isGameOver(), [gameData, localGame]);
 
@@ -124,12 +138,16 @@ function GamePageContent() {
       const result = tempGame.move(move);
       
       if (result) {
+        if (result.flags.includes('c')) playSound('capture');
+        else playSound('move');
+        if (tempGame.inCheck()) playSound('check');
+
         const newFen = tempGame.fen();
         
         const updatePayload: Partial<GameType> & DocumentData = {
             fen: newFen,
             turn: tempGame.turn(),
-            moves: tempGame.history({ verbose: true }).map(move => move.san)
+            moves: [...(gameData?.moves || []), result.san]
         };
 
         if (tempGame.isGameOver()) {
@@ -154,6 +172,7 @@ function GamePageContent() {
         return true;
 
       } else {
+        playSound('illegal');
         toast({
           variant: 'destructive',
           title: 'Invalid Move',
@@ -162,6 +181,7 @@ function GamePageContent() {
         return false;
       }
     } catch (e: any) {
+       playSound('illegal');
        toast({
           variant: 'destructive',
           title: 'Invalid Move',
@@ -172,6 +192,7 @@ function GamePageContent() {
   };
   
   const handleGameOver = (message: string) => {
+    playSound('game-end');
     toast({
       title: 'Game Over',
       description: message,
@@ -179,6 +200,7 @@ function GamePageContent() {
   };
 
   const handleResign = () => {
+    if (finalGameOver) return;
     if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { status: 'completed', winner: opponentColor });
     }
@@ -187,6 +209,7 @@ function GamePageContent() {
   };
 
   const handleOfferDraw = () => {
+    if (finalGameOver || !!gameData?.drawOffer) return;
     if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { drawOffer: playerColor });
       toast({
@@ -202,7 +225,7 @@ function GamePageContent() {
         updateDocumentNonBlocking(gameRef, { status: 'completed', winner: 'd', drawOffer: null });
         handleGameOver('Game drawn by agreement.');
       } else {
-        updateDocumentNonBlocking(gameRef, { drawOffer: null });
+        updateDocumentnonblocking(gameRef, { drawOffer: null });
         toast({
           title: 'Draw Offer Declined',
           description: 'The game continues.',
