@@ -16,7 +16,7 @@ export function initializeFirebase() {
   // In a production environment (like the deployed preview URL), Firebase App Hosting
   // provides the necessary configuration automatically. Calling initializeApp() with
   // no arguments allows it to use this automatically provided config.
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && window.location.hostname.endsWith('.hosted.app')) {
     try {
       firebaseApp = initializeApp();
     } catch (e) {
