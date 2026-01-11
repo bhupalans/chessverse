@@ -1,5 +1,5 @@
 'use client';
-import { useContext } from 'react';
+import { useContext, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Flag, Swords, Timer, Settings, Bot } from 'lucide-react';
+import { Flag, Swords, Timer, Settings, Bot, Play } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import {
   DropdownMenu,
@@ -26,7 +26,6 @@ import {
 import { CHESS_THEMES } from '@/lib/chess-themes';
 import { PIECE_SETS } from '@/lib/piece-sets';
 import { ThemeContext } from '@/context/theme-context';
-
 
 const mockMoves = [
   { number: 1, white: 'e4', black: 'e5' },
@@ -128,7 +127,7 @@ function ThemeSelector() {
 }
 
 
-export function GameInfoPanel({ isBotGame }: { isBotGame: boolean }) {
+export function GameInfoPanel({ isBotGame, onStartGame, gameStarted }: { isBotGame: boolean, onStartGame: () => void, gameStarted: boolean }) {
   const opponentName = isBotGame ? 'Stockfish Bot' : 'Opponent';
   const opponentElo = isBotGame ? 2000 : 1550;
 
@@ -136,7 +135,7 @@ export function GameInfoPanel({ isBotGame }: { isBotGame: boolean }) {
     <div className="flex h-full flex-col">
       <div className="p-4 space-y-4">
         <PlayerCard name={opponentName} elo={opponentElo} avatar={PlaceHolderImages[1].imageUrl} isBot={isBotGame} />
-        <PlayerCard name="You" elo={1500} avatar={PlaceHolderImages[0].imageUrl} isTurn />
+        <PlayerCard name="You" elo={1500} avatar={PlaceHolderImages[0].imageUrl} isTurn={gameStarted} />
       </div>
 
       <Separator />
@@ -166,12 +165,20 @@ export function GameInfoPanel({ isBotGame }: { isBotGame: boolean }) {
 
       <div className="p-4 flex items-center justify-between">
         <div className="grid grid-cols-2 gap-2 flex-1">
-          <Button variant="outline">
-            <Flag className="mr-2 h-4 w-4" /> Resign
-          </Button>
-          <Button variant="outline">
-            <Swords className="mr-2 h-4 w-4" /> Offer Draw
-          </Button>
+          {gameStarted ? (
+            <>
+              <Button variant="outline">
+                <Flag className="mr-2 h-4 w-4" /> Resign
+              </Button>
+              <Button variant="outline">
+                <Swords className="mr-2 h-4 w-4" /> Offer Draw
+              </Button>
+            </>
+          ) : (
+            <Button onClick={onStartGame} className="col-span-2">
+              <Play className="mr-2 h-4 w-4" /> Start Game
+            </Button>
+          )}
         </div>
          <div className="ml-2">
           <ThemeSelector />

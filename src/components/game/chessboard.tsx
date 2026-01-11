@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: boolean }) {
+export function Chessboard({ gameId, isBotGame, gameStarted }: { gameId: string, isBotGame: boolean, gameStarted: boolean }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
   const game = useMemo(() => new Chess(), []);
@@ -83,6 +83,14 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
   };
 
   const handleSquareClick = (row: number, col: number) => {
+    if (!gameStarted) {
+      toast({
+        title: 'Game Not Started',
+        description: 'Click "Start Game" to begin the match.',
+      });
+      return;
+    }
+    
     const square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row) as ChessJsSquare;
 
     if (game.isGameOver()) {
@@ -121,7 +129,10 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
 
 
   return (
-    <div className="grid aspect-square w-full max-w-[calc(100vh-10rem)] grid-cols-8 grid-rows-8 rounded-lg overflow-hidden shadow-2xl">
+    <div className={cn(
+      "grid aspect-square w-full max-w-[calc(100vh-10rem)] grid-cols-8 grid-rows-8 rounded-lg overflow-hidden shadow-2xl",
+      !gameStarted && "opacity-50 cursor-not-allowed"
+    )}>
       {board.map((row, rowIndex) =>
         row.map((piece, colIndex) => {
           const square = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex);
@@ -140,7 +151,8 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
             >
               <div
                 className={cn(
-                  'relative flex h-full w-full cursor-pointer items-center justify-center transition-colors',
+                  'relative flex h-full w-full items-center justify-center transition-colors',
+                  gameStarted && 'cursor-pointer',
                   isSelected && 'bg-yellow-500/50'
                 )}
               >

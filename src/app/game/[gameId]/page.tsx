@@ -3,7 +3,7 @@
 import { GameInfoPanel } from '@/components/game/game-info-panel';
 import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import dynamic from 'next/dynamic';
 
 const Chessboard = dynamic(
@@ -21,15 +21,20 @@ function GamePageContent() {
   const gameId = Array.isArray(params.gameId) ? params.gameId[0] : params.gameId;
   const playMode = searchParams.get('play');
   const isBotGame = playMode === 'bot';
+  const [gameStarted, setGameStarted] = useState(false);
+
+  const handleStartGame = () => {
+    setGameStarted(true);
+  };
 
   return (
     <ThemeProvider>
       <div className="flex h-full flex-col lg:flex-row">
         <div className="flex flex-1 items-center justify-center bg-background p-4 lg:p-8">
-          <Chessboard gameId={gameId} isBotGame={isBotGame} />
+          <Chessboard gameId={gameId} isBotGame={isBotGame} gameStarted={gameStarted} />
         </div>
         <div className="w-full shrink-0 border-l bg-card lg:w-[350px] lg:h-auto">
-          <GameInfoPanel isBotGame={isBotGame} />
+          <GameInfoPanel isBotGame={isBotGame} onStartGame={handleStartGame} gameStarted={gameStarted} />
         </div>
       </div>
     </ThemeProvider>
