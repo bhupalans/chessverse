@@ -88,9 +88,11 @@ export default function SignupPage() {
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
+      // Check if user profile already exists to avoid overwriting
       createUserProfile(user.uid, user.email!, user.displayName || 'Anonymous');
       router.push('/');
     } catch (error) {
+      console.error('Google Sign-In Error:', error);
       toast({
         variant: 'destructive',
         title: 'Google Sign-In Failed',
