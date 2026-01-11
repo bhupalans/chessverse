@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { useFirestore } from '@/firebase';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { useFirestore, useMemoFirebase } from '@/firebase';
+import { addDoc, collection, serverTimestamp, doc, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { User as FirebaseUser } from 'firebase/auth';
-import type { User as UserType } from '@/lib/types';
+import type { Game, User as UserType } from '@/lib/types';
 import { Chess } from 'chess.js';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { useRouter } from 'next/navigation';
 
 interface InviteButtonProps {
     inviter: FirebaseUser | null;
@@ -17,8 +18,32 @@ interface InviteButtonProps {
 
 export function InviteButton({ inviter, invitee }: InviteButtonProps) {
   const [isPending, setIsPending] = useState(false);
+  const [gameId, setGameId] = useState<string | null>(null);
   const firestore = useFirestore();
+  const router = useRouter();
   const { toast } = useToast();
+
+  const gameRef = useMemoFirebase(() => {
+    if (!firestore || !gameId) return null;
+    return doc(firestore, 'games', gameId);
+  }, [firestore, gameId]);
+
+
+  useEffect(() => {
+    if (!gameRef) return;
+
+    const unsubscribe = onSnapshot(gameRef, (doc) => {
+      if (doc.exists()) {
+        const game = doc.data() as Game;
+        if (game.status === 'inprogress') {
+          router.push(`/game/${doc.id}`);
+        }
+        // Could also handle 'declined' status here
+      }
+    });
+
+    return () => unsubscribe();
+  }, [gameRef, router]);
 
   const handleInvite = async () => {
     if (!inviter) {
@@ -36,19 +61,19 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
       const gamesCollection = collection(firestore, 'games');
       const newGame = new Chess();
 
-      await addDoc(gamesCollection, {
+      const newGameDoc = await addDoc(gamesCollection, {
         player1Id: inviter.uid,
         player2Id: invitee.id,
         player1: {
           id: inviter.uid,
           name: inviter.displayName,
-          avatarUrl: inviter.photoURL || PlaceHolderImages[0].imageUrl,
+          avatarUrl: inviter.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl,
           elo: 1200, // Placeholder
         },
         player2: {
           id: invitee.id,
           name: invitee.username,
-          avatarUrl: invitee.avatarUrl || PlaceHolderImages[1].imageUrl,
+          avatarUrl: invitee.avatarUrl || PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl,
           elo: invitee.eloRating,
         },
         status: 'invited',
@@ -56,6 +81,8 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
         fen: newGame.fen(),
         turn: 'w',
       });
+      
+      setGameId(newGameDoc.id);
 
       toast({
         title: 'Invitation Sent',
