@@ -18,16 +18,41 @@ import { Skeleton } from '../ui/skeleton';
 
 export function AvailableGames() {
   const firestore = useFirestore();
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
 
   const gamesQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    // Only query if the user is logged in
+    if (!firestore || !user) return null;
     return query(collection(firestore, 'games'), where('status', '==', 'waiting'));
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: games, isLoading } = useCollection<Game>(gamesQuery);
 
   const availableGames = games?.filter(game => game.player1Id !== user?.uid);
+
+  // When the user is not logged in, we can show a specific message.
+  if (!isUserLoading && !user) {
+    return (
+        <div className="rounded-lg border">
+            <Table>
+                <TableHeader>
+                <TableRow>
+                    <TableHead>Player</TableHead>
+                    <TableHead className="hidden sm:table-cell">ELO</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+                </TableHeader>
+                <TableBody>
+                    <TableRow>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
+                        Please log in to see available games.
+                        </TableCell>
+                    </TableRow>
+                </TableBody>
+            </Table>
+        </div>
+    );
+  }
 
   return (
     <div className="rounded-lg border">
@@ -40,7 +65,7 @@ export function AvailableGames() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {isLoading && (
+          {(isLoading || isUserLoading) && (
             Array.from({ length: 3 }).map((_, i) => (
               <TableRow key={i}>
                 <TableCell>
@@ -58,14 +83,14 @@ export function AvailableGames() {
               </TableRow>
             ))
           )}
-          {!isLoading && availableGames && availableGames.length === 0 && (
+          {!isLoading && !isUserLoading && availableGames && availableGames.length === 0 && (
             <TableRow>
               <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
                 No available games. Why not create one?
               </TableCell>
             </TableRow>
           )}
-          {!isLoading && availableGames?.map((game) => (
+          {!isLoading && !isUserLoading && availableGames?.map((game) => (
             <TableRow key={game.id}>
               <TableCell>
                 <div className="flex items-center gap-3">

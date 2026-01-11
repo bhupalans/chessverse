@@ -110,17 +110,17 @@ service cloud.firestore {
      * Updating a game is restricted to the players in that game.
      */
     match /games/{gameId} {
-      // Allow any authenticated user to read games for the lobby.
-      allow get, list: if isSignedIn();
+      // Any authenticated user can read or list games for the lobby.
+      allow read: if isSignedIn();
       
-      // Allow any authenticated user to create a new game.
+      // Any authenticated user can create a valid new game.
       allow create: if isSignedIn() && isNewGameValid();
 
-      // Allow players to update the game (join, make moves).
-      allow update: if isPlayer(resource) && (isGameJoinValid() || isGameUpdateValid());
+      // Only players in the game can update it.
+      allow update: if isSignedIn() && isPlayer(resource) && (isGameJoinValid() || isGameUpdateValid());
       
-      // Only a player can delete a game they are in (e.g., if it's a waiting game they created).
-      allow delete: if isPlayer(resource);
+      // Only a player can delete a game they are in.
+      allow delete: if isSignedIn() && isPlayer(resource);
     }
   }
 }
