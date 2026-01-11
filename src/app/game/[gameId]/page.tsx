@@ -62,7 +62,7 @@ function GamePageContent() {
             sf.addEventListener('message', (e: any) => {
               if (e.data?.startsWith('bestmove')) {
                 const bestMove = e.data.split(' ')[1];
-                if (bestMove) {
+                if (bestMove && game.turn() === opponentColor) {
                   game.move(bestMove, { sloppy: true });
                   setFen(game.fen());
                   setHistory(game.history({ verbose: true }).map(move => move.san));
@@ -83,7 +83,8 @@ function GamePageContent() {
         }
       };
     }
-  }, [isBotGame, game, engineGo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBotGame]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     try {

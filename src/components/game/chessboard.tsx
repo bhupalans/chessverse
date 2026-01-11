@@ -1,7 +1,7 @@
 'use client';
 import { useState, useMemo, useContext } from 'react';
 import { cn } from '@/lib/utils';
-import { type Chess, type Square as ChessJsSquare, type Color, Chess } from 'chess.js';
+import { type Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 
@@ -28,9 +28,9 @@ export function Chessboard({
   const { toast } = useToast();
 
   const board = useMemo(() => {
-    const tempGame = new Chess(fen);
+    const tempGame = game;
     return tempGame.board();
-  }, [fen]);
+  }, [game]);
   
   const handleSquareClick = (row: number, col: number) => {
     if (!gameStarted) {
@@ -83,7 +83,7 @@ export function Chessboard({
     if (!selectedSquare) return new Set();
     const moves = game.moves({ square: selectedSquare, verbose: true });
     return new Set(moves.map(move => move.to));
-  }, [selectedSquare, game, fen]);
+  }, [selectedSquare, game]);
 
   const boardToRender = playerColor === 'w' ? board : board.slice().reverse().map(row => row.slice().reverse());
 
