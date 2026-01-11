@@ -12,7 +12,8 @@ export function Chessboard({
   isBotGame,
   gameStarted,
   isEngineLoading,
-  playerColor
+  playerColor,
+  isGameOver,
 }: {
   game: Chess;
   fen: string;
@@ -21,6 +22,7 @@ export function Chessboard({
   gameStarted: boolean;
   isEngineLoading: boolean;
   playerColor: Color;
+  isGameOver: boolean;
 }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
@@ -28,9 +30,9 @@ export function Chessboard({
   const { toast } = useToast();
 
   const board = useMemo(() => {
-    const tempGame = game;
+    const tempGame = new Chess(fen);
     return tempGame.board();
-  }, [game]);
+  }, [fen]);
   
   const handleSquareClick = (row: number, col: number) => {
     if (!gameStarted) {
@@ -49,7 +51,7 @@ export function Chessboard({
     }
 
 
-    if (game.isGameOver()) {
+    if (isGameOver) {
         toast({ title: 'Game Over' });
         return;
     }
@@ -93,7 +95,7 @@ export function Chessboard({
   return (
     <div className={cn(
       "grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] aspect-square w-full max-w-lg rounded-lg overflow-hidden shadow-2xl",
-      !gameStarted && "opacity-50 cursor-not-allowed"
+      (!gameStarted || isGameOver) && "opacity-60 cursor-not-allowed"
     )}>
       <div className="flex flex-col text-xs font-bold text-muted-foreground pr-1">
         {ranks.map((rank) => (
@@ -129,7 +131,7 @@ export function Chessboard({
                 <div
                   className={cn(
                     'relative flex h-full w-full items-center justify-center transition-colors',
-                    gameStarted && 'cursor-pointer',
+                    (gameStarted && !isGameOver) && 'cursor-pointer',
                     isSelected && 'bg-yellow-500/50'
                   )}
                 >

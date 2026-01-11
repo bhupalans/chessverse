@@ -37,6 +37,7 @@ function GamePageContent() {
   const [fen, setFen] = useState(game.fen());
   const [history, setHistory] = useState<string[]>([]);
   const [gameStarted, setGameStarted] = useState(false);
+  const [isGameOver, setIsGameOver] = useState(false);
   
   const { toast } = useToast();
   const engine = useRef<any>(null);
@@ -53,7 +54,7 @@ function GamePageContent() {
   useEffect(() => {
     if (isBotGame) {
       const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.js';
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.umd.js';
       script.async = true;
       script.onload = () => {
         if (window.Stockfish) {
@@ -81,20 +82,25 @@ function GamePageContent() {
         if(document.body.contains(script)){
           document.body.removeChild(script);
         }
+        if (engine.current) {
+          engine.current.postMessage('quit');
+        }
       };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isBotGame]);
+  }, [isBotGame, game, opponentColor]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     try {
-      if (game.isGameOver() || game.turn() !== playerColor) return false;
+      if (isGameOver || game.isGameOver() || game.turn() !== playerColor) return false;
       const result = game.move(move);
       if (result) {
         setFen(game.fen());
         setHistory(game.history({ verbose: true }).map(move => move.san));
 
-        if (isBotGame && !game.isGameOver() && engine.current) {
+        if (game.isGameOver()) {
+          handleGameOver('Checkmate!');
+        } else if (isBotGame && !game.isGameOver() && engine.current) {
           engine.current.postMessage(`position fen ${game.fen()}`);
           setTimeout(engineGo, 200);
         }
@@ -118,7 +124,7 @@ function GamePageContent() {
   };
   
   const handleGameOver = (message: string) => {
-    game.move('e8=Q'); // Arbitrary invalid move to trigger game over state in chess.js
+    setIsGameOver(true);
     toast({
       title: 'Game Over',
       description: message,
@@ -143,6 +149,7 @@ function GamePageContent() {
   
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
+  const finalGameOver = isGameOver || game.isGameOver();
 
   return (
     <ThemeProvider>
@@ -153,7 +160,7 @@ function GamePageContent() {
             elo={topPlayer.elo} 
             avatar={topPlayer.avatar} 
             isBot={topPlayer.isBot} 
-            isTurn={gameStarted && game.turn() === opponentColor} 
+            isTurn={gameStarted && game.turn() === opponentColor && !finalGameOver} 
             color={playerColor === 'w' ? 'Black' : 'White'}
           />
           <Chessboard 
@@ -164,12 +171,13 @@ function GamePageContent() {
             gameStarted={gameStarted}
             isEngineLoading={isEngineLoading}
             playerColor={playerColor}
+            isGameOver={finalGameOver}
           />
            <PlayerCard 
             name={bottomPlayer.name} 
             elo={bottomPlayer.elo} 
             avatar={bottomPlayer.avatar} 
-            isTurn={gameStarted && game.turn() === playerColor} 
+            isTurn={gameStarted && game.turn() === playerColor && !finalGameOver} 
             color={playerColor === 'w' ? 'White' : 'Black'}
           />
 
@@ -177,10 +185,10 @@ function GamePageContent() {
             <div className="grid grid-cols-2 gap-2 flex-1">
               {gameStarted ? (
                 <>
-                  <Button variant="outline" onClick={handleResign} disabled={game.isGameOver()}>
+                  <Button variant="outline" onClick={handleResign} disabled={finalGameOver}>
                     <Flag className="mr-2 h-4 w-4" /> Resign
                   </Button>
-                  <Button variant="outline" onClick={handleOfferDraw} disabled={game.isGameOver()}>
+                  <Button variant="outline" onClick={handleOfferDraw} disabled={finalGameOver}>
                     <Swords className="mr-2 h-4 w-4" /> Offer Draw
                   </Button>
                 </>
