@@ -1,3 +1,4 @@
+
 import type { FunctionComponent } from "react";
 
 export type Player = {
@@ -30,6 +31,7 @@ export type Game = {
   moves: string[];
   winner?: 'w' | 'b' | 'd'; // d for draw
   drawOffer?: 'w' | 'b' | null;
+  reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate';
 };
 
 export type HistoryGame = {

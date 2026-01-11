@@ -2,7 +2,7 @@
 'use client';
 
 import { ThemeProvider } from '@/context/theme-context';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Chess, type Square as ChessJsSquare, type Color, type Move } from 'chess.js';
@@ -15,6 +15,7 @@ import { ThemeSelector } from '@/components/game/theme-selector';
 import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import type { Game as GameType } from '@/lib/types';
 import { doc, type DocumentData } from 'firebase/firestore';
+import { GameOverDialog } from '@/components/game/game-over-dialog';
 
 
 const Chessboard = dynamic(
@@ -34,6 +35,7 @@ declare global {
 function GamePageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const gameId = Array.isArray(params.gameId) ? params.gameId[0] : params.gameId;
   const playMode = searchParams.get('play');
   const isBotGame = playMode === 'bot';
@@ -46,6 +48,7 @@ function GamePageContent() {
   const localGame = useMemo(() => new Chess(), []);
   const [fen, setFen] = useState('start');
   const [gameStarted, setGameStarted] = useState(false);
+  const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   
   const { toast } = useToast();
   const engine = useRef<any>(null);
@@ -71,15 +74,40 @@ function GamePageContent() {
     }
   }, []);
 
+  const handleGameOver = useCallback((reason: string, winnerData?: 'w' | 'b' | 'd') => {
+      playSound('game-end');
+      const winnerColor = winnerData || (localGame.turn() === 'b' ? 'w' : 'b');
+
+      let winnerName = 'draw';
+      if (winnerColor !== 'd') {
+          if (isBotGame) {
+              winnerName = winnerColor === playerColor ? 'You' : 'Stockfish Bot';
+          } else if (gameData) {
+              if (winnerColor === 'w') {
+                  winnerName = gameData.player1?.name || 'Player 1';
+              } else {
+                  winnerName = gameData.player2?.name || 'Player 2';
+              }
+          }
+      }
+      setGameOverState({ winner: winnerName, reason });
+  }, [isBotGame, gameData, localGame, playerColor, playSound]);
+
   useEffect(() => {
     if (gameData?.fen) {
       localGame.load(gameData.fen);
       setFen(localGame.fen());
     }
-     if (gameData?.status === 'inprogress') {
+    if (gameData?.status === 'inprogress') {
       setGameStarted(true);
     }
-  }, [gameData, localGame]);
+    if (gameData?.status === 'completed' && gameData.winner && !gameOverState) {
+        let reason = 'Checkmate!';
+        if (gameData.winner === 'd') reason = 'Draw by agreement';
+        else if(gameData.reason === 'resign') reason = 'Resignation';
+        handleGameOver(reason, gameData.winner);
+    }
+  }, [gameData, localGame, handleGameOver, gameOverState]);
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -108,7 +136,11 @@ function GamePageContent() {
                   }
                   setFen(localGame.fen());
                   if (localGame.isGameOver()) {
-                    handleGameOver(localGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
+                    if(localGame.isCheckmate()){
+                       handleGameOver('Checkmate!');
+                    } else {
+                       handleGameOver('Game Over');
+                    }
                   }
                 }
               }
@@ -130,7 +162,7 @@ function GamePageContent() {
         }
       };
     }
-  }, [isBotGame, localGame, opponentColor, playSound]);
+  }, [isBotGame, localGame, opponentColor, playSound, handleGameOver]);
 
   const isGameOver = useMemo(() => gameData?.status === 'completed' || localGame.isGameOver(), [gameData, localGame]);
 
@@ -159,10 +191,12 @@ function GamePageContent() {
           updatePayload.status = 'completed';
           if (tempGame.isCheckmate()) {
              updatePayload.winner = localGame.turn() === 'b' ? 'w' : 'b';
+             updatePayload.reason = 'checkmate';
           } else {
             updatePayload.winner = 'd'; // Draw
+            updatePayload.reason = 'draw';
           }
-          handleGameOver(tempGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
+          handleGameOver(tempGame.isCheckmate() ? 'Checkmate!' : 'Game Over', updatePayload.winner);
         }
         
         if (!isBotGame && gameRef) {
@@ -196,22 +230,15 @@ function GamePageContent() {
        return false;
     }
   };
-  
-  const handleGameOver = (message: string) => {
-    playSound('game-end');
-    toast({
-      title: 'Game Over',
-      description: message,
-    });
-  };
 
   const handleResign = () => {
     if (isGameOver) return;
+    const winner = opponentColor;
     if (!isBotGame && gameRef) {
-      updateDocumentNonBlocking(gameRef, { status: 'completed', winner: opponentColor });
+      updateDocumentNonBlocking(gameRef, { status: 'completed', winner: winner, reason: 'resign' });
     }
     const opponentName = isBotGame ? 'The bot' : gameData?.player1Id === user?.uid ? gameData?.player2?.name : gameData?.player1?.name;
-    handleGameOver(`You have resigned. ${opponentName} wins.`);
+    handleGameOver(`You have resigned. ${opponentName} wins.`, winner);
   };
 
   const handleOfferDraw = () => {
@@ -228,8 +255,8 @@ function GamePageContent() {
   const handleDrawResponse = (accept: boolean) => {
     if (!isBotGame && gameRef) {
       if (accept) {
-        updateDocumentNonBlocking(gameRef, { status: 'completed', winner: 'd', drawOffer: null });
-        handleGameOver('Game drawn by agreement.');
+        updateDocumentNonBlocking(gameRef, { status: 'completed', winner: 'd', reason: 'draw', drawOffer: null });
+        handleGameOver('Game drawn by agreement.', 'd');
       } else {
         updateDocumentNonBlocking(gameRef, { drawOffer: null });
         toast({
@@ -239,7 +266,6 @@ function GamePageContent() {
       }
     }
   };
-
 
   const handleStartGame = () => {
      if(isBotGame) {
@@ -273,6 +299,14 @@ function GamePageContent() {
   return (
     <ThemeProvider>
       <div className="flex h-full flex-col items-center justify-center bg-background p-4 lg:p-8">
+        {gameOverState && (
+          <GameOverDialog
+            isOpen={!!gameOverState}
+            onClose={() => { setGameOverState(null); router.push('/') }}
+            winnerName={gameOverState.winner}
+            reason={gameOverState.reason}
+          />
+        )}
         <div className="w-full max-w-lg space-y-4">
           <PlayerCard 
             name={topPlayer.name} 
