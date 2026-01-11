@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPlayer(gameId) {
+      let game = get(/databases/$(database)/documents/games/$(gameId)).data;
+      return request.auth.uid == game.whiteUid || request.auth.uid == game.blackUid;
+    }
+    
+    // Users can read their own profile.
+    // User profiles can be created if the uid matches.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Games can be read by anyone.
+    // Only authenticated users can create games.
+    // Only players in the game can update game state.
+    match /games/{gameId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isPlayer(gameId);
+      allow delete: if false;
+
+      // Moves can be read by anyone.
+      // Only players can create moves.
+      // Moves cannot be updated or deleted.
+      match /moves/{moveId} {
+        allow read: if true;
+        allow create: if isSignedIn() && isPlayer(gameId);
+        allow update, delete: if false;
+      }
+    }
+  }
+}
