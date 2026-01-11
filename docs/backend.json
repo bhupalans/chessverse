@@ -72,20 +72,45 @@
         "winnerId": {
           "type": "string",
           "description": "Reference to User who won the game. Null if the game is still ongoing or it was a draw. (Relationship: User 1:N Game)"
+        },
+        "fen": {
+          "type": "string",
+          "description": "The board state in Forsyth-Edwards Notation."
+        },
+        "turn": {
+          "type": "string",
+          "enum": [
+            "w",
+            "b"
+          ],
+          "description": "The current player's turn ('w' for white, 'b' for black)."
+        },
+        "player1Clock": {
+          "type": "number",
+          "description": "Remaining time for player 1 in seconds."
+        },
+        "player2Clock": {
+          "type": "number",
+          "description": "Remaining time for player 2 in seconds."
+        },
+        "lastMove": {
+          "type": "string",
+          "description": "The last move made in Standard Algebraic Notation (SAN)."
         }
       },
       "required": [
         "id",
         "player1Id",
-        "player2Id",
-        "startTime"
+        "startTime",
+        "fen",
+        "turn"
       ]
     }
   },
   "auth": {
     "providers": [
       "password",
-      "anonymous"
+      "google.com"
     ]
   },
   "firestore": {
@@ -107,26 +132,41 @@
         }
       },
       {
-        "path": "/users/{userId}/games/{gameId}",
+        "path": "/games/{gameId}",
         "definition": {
           "entityName": "Game",
           "schema": {
             "$ref": "#/backend/entities/Game"
           },
-          "description": "Stores games associated with a user. Access control is based on path-based ownership. A user can only access their own game documents.",
+          "description": "Stores game state. It is publicly readable but can only be modified by players in the game.",
           "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier for the user (owner)."
-            },
             {
               "name": "gameId",
               "description": "The unique identifier for the game."
             }
           ]
         }
+      },
+      {
+        "path": "/games/{gameId}/moves/{moveId}",
+        "definition": {
+          "entityName": "Move",
+          "schema": {
+            "$ref": "#/backend/entities/Move"
+          },
+          "description": "Stores the history of moves for a game. This is append-only.",
+          "params": [
+            {
+              "name": "gameId",
+              "description": "The unique identifier for the game."
+            },
+            {
+              "name": "moveId",
+              "description": "The unique identifier for the move."
+            }
+          ]
+        }
       }
-    ],
-    "reasoning": "The Firestore structure is designed to support a real-time multiplayer chess application ('ChessVerse') with a focus on secure and scalable data management. The structure adheres to the principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters).\n\n**User Data:** User data is stored in a collection `/users/{userId}`. This path-based ownership simplifies security rules, as access control can be directly tied to the authenticated user's ID (`request.auth.uid`).\n\n**Game Data:** Games are stored in a subcollection `/users/{userId}/games/{gameId}`. This approach facilitates ownership based access control, allowing a user to query their games and game history without exposing data from other users. The `game` document includes `player1Id`, `player2Id`, and `winnerId`. This structure facilitates listing games associated with a particular user.\n\n**Authorization Independence:** Authorization independence is achieved by storing the required data to determine authorization directly within the relevant documents, removing the need for `get()` calls in security rules. For example, the game documents contains player IDs. The role of a player is implicitly given by the `player1Id` and `player2Id` fields. This eliminates authorization dependencies on parent or related documents, simplifying security rules and improving performance and scalability.\n\n**QAPs (Rules are not Filters):** The data structure supports secure list operations by segregating data based on ownership. Each user can only access their own games, as determined by the `userId` in the path. This ensures that rules do not act as filters, and list operations are inherently secure."
+    ]
   }
 }
