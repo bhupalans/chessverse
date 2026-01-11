@@ -67,7 +67,7 @@ service cloud.firestore {
     function isGameJoinValid() {
       let before = resource.data;
       let after = request.resource.data;
-      return before.status == 'waiting'
+      return (before.status == 'waiting' || before.status == 'invited')
           && after.status == 'inprogress'
           && before.player1Id != request.auth.uid // Can't join your own game
           && after.player2Id == request.auth.uid
