@@ -7,7 +7,15 @@ export type Player = {
   elo: number;
 };
 
-export type GameStatus = 'waiting' | 'inprogress' | 'completed';
+export type User = {
+  id: string;
+  username: string;
+  avatarUrl: string;
+  eloRating: number;
+  onlineStatus: 'online' | 'offline';
+};
+
+export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';
 
 export type Game = {
   id: string;
@@ -15,7 +23,6 @@ export type Game = {
   player2Id?: string;
   player1?: Player;
   player2?: Player;
-  players: [Player, Player?]; // Keep for compatibility if used elsewhere
   status: GameStatus;
   eloGain?: number;
 };

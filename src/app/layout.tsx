@@ -5,6 +5,9 @@ import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/toaster';
 import { Header } from '@/components/layout/header';
 import { FirebaseClientProvider } from '@/firebase';
+import { InvitationListener } from '@/components/game/invitation-listener';
+import { UserPresence } from '@/components/layout/user-presence';
+
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -27,6 +30,8 @@ export default function RootLayout({
         )}
       >
         <FirebaseClientProvider>
+          <UserPresence />
+          <InvitationListener />
           <div className="flex min-h-screen flex-col">
             <Header />
             <main className="flex-1">{children}</main>

@@ -26,6 +26,11 @@
         "completedGames": {
           "type": "number",
           "description": "Number of games completed by the user."
+        },
+        "onlineStatus": {
+          "type": "string",
+          "enum": ["online", "offline"],
+          "description": "The user's current presence status."
         }
       },
       "required": [
@@ -46,12 +51,14 @@
         },
         "player1Id": {
           "type": "string",
-          "description": "Reference to User 1. (Relationship: User 1:N Game)"
+          "description": "Reference to User 1 (the inviter)."
         },
         "player2Id": {
           "type": "string",
-          "description": "Reference to User 2. (Relationship: User 1:N Game)"
+          "description": "Reference to User 2 (the invited player)."
         },
+         "player1": { "$ref": "#/entities/User" },
+         "player2": { "$ref": "#/entities/User" },
         "startTime": {
           "type": "string",
           "description": "Timestamp indicating the start time of the game.",
@@ -71,7 +78,7 @@
         },
         "winnerId": {
           "type": "string",
-          "description": "Reference to User who won the game. Null if the game is still ongoing or it was a draw. (Relationship: User 1:N Game)"
+          "description": "Reference to User who won the game. Null if the game is still ongoing or it was a draw."
         },
         "fen": {
           "type": "string",
@@ -85,23 +92,17 @@
           ],
           "description": "The current player's turn ('w' for white, 'b' for black)."
         },
-        "player1Clock": {
-          "type": "number",
-          "description": "Remaining time for player 1 in seconds."
-        },
-        "player2Clock": {
-          "type": "number",
-          "description": "Remaining time for player 2 in seconds."
-        },
-        "lastMove": {
+        "status": {
           "type": "string",
-          "description": "The last move made in Standard Algebraic Notation (SAN)."
+          "enum": ["invited", "waiting", "inprogress", "completed"],
+          "description": "The current status of the game."
         }
       },
       "required": [
         "id",
         "player1Id",
-        "startTime",
+        "player2Id",
+        "status",
         "fen",
         "turn"
       ]
@@ -143,26 +144,6 @@
             {
               "name": "gameId",
               "description": "The unique identifier for the game."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/games/{gameId}/moves/{moveId}",
-        "definition": {
-          "entityName": "Move",
-          "schema": {
-            "$ref": "#/backend/entities/Move"
-          },
-          "description": "Stores the history of moves for a game. This is append-only.",
-          "params": [
-            {
-              "name": "gameId",
-              "description": "The unique identifier for the game."
-            },
-            {
-              "name": "moveId",
-              "description": "The unique identifier for the move."
             }
           ]
         }

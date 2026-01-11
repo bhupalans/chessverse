@@ -60,6 +60,7 @@ export default function SignupPage() {
       username: user.displayName || 'Anonymous',
       eloRating: 1200,
       completedGames: 0,
+      onlineStatus: 'online',
     }, { merge: true });
   };
 

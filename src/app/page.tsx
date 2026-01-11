@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { AvailableGames } from '@/components/lobby/available-games';
+import { OnlineUsers } from '@/components/lobby/online-users';
 import { CreateGameDialog } from '@/components/lobby/create-game-dialog';
 
 export default function LobbyPage() {
@@ -16,16 +16,16 @@ export default function LobbyPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-2xl font-bold">
-                Game Lobby
+                Online Users
               </CardTitle>
               <CardDescription>
-                Join an existing game or create a new one to start playing.
+                Invite someone to a game of chess.
               </CardDescription>
             </div>
             <CreateGameDialog />
           </CardHeader>
           <CardContent>
-            <AvailableGames />
+            <OnlineUsers />
           </CardContent>
         </Card>
       </div>
