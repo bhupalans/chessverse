@@ -52,7 +52,8 @@ function GamePageContent() {
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
   
   const playerColor = useMemo<Color>(() => {
-    if (isBotGame || !gameData || !user) return 'w';
+    if (!gameData || !user) return 'w';
+    if (isBotGame) return 'w'; // Human is always white against the bot
     return gameData.player1Id === user.uid ? 'w' : 'b';
   }, [gameData, user, isBotGame]);
 
@@ -61,8 +62,12 @@ function GamePageContent() {
   // Sound playing utility
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
     if (typeof window !== 'undefined') {
-      const audio = new Audio(`/sounds/${sound}.mp3`);
-      audio.play().catch(e => console.error(`Failed to play ${sound}.mp3`, e));
+      try {
+        const audio = new Audio(`/sounds/${sound}.mp3`);
+        audio.play().catch(e => console.error(`Failed to play ${sound}.mp3`, e));
+      } catch (e) {
+        console.error("Could not play sound", e)
+      }
     }
   }, []);
 
@@ -153,7 +158,7 @@ function GamePageContent() {
         if (tempGame.isGameOver()) {
           updatePayload.status = 'completed';
           if (tempGame.isCheckmate()) {
-            updatePayload.winner = tempGame.turn() === 'b' ? playerColor : opponentColor;
+             updatePayload.winner = localGame.turn() === 'b' ? 'w' : 'b';
           } else {
             updatePayload.winner = 'd'; // Draw
           }
@@ -163,6 +168,7 @@ function GamePageContent() {
         if (!isBotGame && gameRef) {
           updateDocumentNonBlocking(gameRef, updatePayload);
         } else if (isBotGame) {
+           localGame.load(newFen);
            setFen(newFen);
            if (!tempGame.isGameOver() && engine.current) {
              engine.current.postMessage(`position fen ${newFen}`);
@@ -200,7 +206,7 @@ function GamePageContent() {
   };
 
   const handleResign = () => {
-    if (finalGameOver) return;
+    if (isGameOver) return;
     if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { status: 'completed', winner: opponentColor });
     }
@@ -209,7 +215,7 @@ function GamePageContent() {
   };
 
   const handleOfferDraw = () => {
-    if (finalGameOver || !!gameData?.drawOffer) return;
+    if (isGameOver || !!gameData?.drawOffer) return;
     if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { drawOffer: playerColor });
       toast({
@@ -225,7 +231,7 @@ function GamePageContent() {
         updateDocumentNonBlocking(gameRef, { status: 'completed', winner: 'd', drawOffer: null });
         handleGameOver('Game drawn by agreement.');
       } else {
-        updateDocumentnonblocking(gameRef, { drawOffer: null });
+        updateDocumentNonBlocking(gameRef, { drawOffer: null });
         toast({
           title: 'Draw Offer Declined',
           description: 'The game continues.',
@@ -248,8 +254,8 @@ function GamePageContent() {
   const p1 = isBotGame ? humanPlayer : (gameData?.player1 || { id: 'p1', name: 'Player 1', elo: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' });
   const p2 = isBotGame ? botPlayer : (gameData?.player2 || { id: 'p2', name: 'Player 2', elo: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' });
 
-  const whitePlayer = playerColor === 'w' ? p1 : p2;
-  const blackPlayer = playerColor === 'w' ? p2 : p1;
+  const whitePlayer = p1;
+  const blackPlayer = p2;
   
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
@@ -272,9 +278,9 @@ function GamePageContent() {
             name={topPlayer.name} 
             elo={topPlayer.elo} 
             avatar={topPlayer.avatarUrl}
-            isBot={isBotGame && topPlayer.name === botPlayer.name} 
+            isBot={isBotGame && topPlayer.id === 'bot'} 
             isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
-            color={playerColor === 'w' ? 'Black' : 'White'}
+            color={'Black'}
           />
           <Chessboard 
             fen={fen === 'start' && gameData?.fen ? gameData.fen : fen}
@@ -289,8 +295,9 @@ function GamePageContent() {
             name={bottomPlayer.name} 
             elo={bottomPlayer.elo} 
             avatar={bottomPlayer.avatarUrl}
+            isBot={isBotGame && bottomPlayer.id === 'bot'}
             isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
-            color={playerColor === 'w' ? 'White' : 'Black'}
+            color={'White'}
             drawOffered={drawOfferedToMe}
             onDrawResponse={handleDrawResponse}
           />

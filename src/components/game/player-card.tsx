@@ -1,7 +1,7 @@
 'use client';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Bot, Timer, Handshake, ShieldAlert } from 'lucide-react';
+import { Bot, Timer, Handshake } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const PlayerCard = ({
