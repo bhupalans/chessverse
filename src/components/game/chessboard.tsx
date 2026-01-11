@@ -1,10 +1,11 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useContext } from 'react';
 import { cn } from '@/lib/utils';
 import type { ChessBoardState, Piece, Square } from '@/lib/types';
 import { Chess, type Piece as ChessJsPiece, type Square as ChessJsSquare } from 'chess.js';
 import { ChessPieceComponent } from '@/components/icons/chess-pieces';
 import { useToast } from '@/hooks/use-toast';
+import { ThemeContext } from '@/context/theme-context';
 
 const initialBoard: ChessBoardState = [
   // This can be simplified as chess.js will manage the board state
@@ -12,6 +13,7 @@ const initialBoard: ChessBoardState = [
 ];
 
 export function Chessboard({ gameId }: { gameId: string }) {
+  const { theme } = useContext(ThemeContext);
   // chess.js instance will be the source of truth for game logic
   const game = useMemo(() => new Chess(), []);
   const [board, setBoard] = useState(game.board());
@@ -104,20 +106,20 @@ export function Chessboard({ gameId }: { gameId: string }) {
               key={`${rowIndex}-${colIndex}`}
               className={cn(
                 'flex items-center justify-center',
-                isLightSquare ? 'bg-secondary' : 'bg-primary/20'
+                isLightSquare ? theme.lightSquare : theme.darkSquare
               )}
               onClick={() => handleSquareClick(rowIndex, colIndex)}
             >
               <div
                 className={cn(
                   'relative flex h-full w-full cursor-pointer items-center justify-center transition-colors',
-                  isSelected && 'bg-accent/50'
+                  isSelected && 'bg-yellow-500/50'
                 )}
               >
                 {piece && <ChessPieceComponent type={piece.type} color={piece.color} />}
                 {isPossibleMove && (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-1/3 w-1/3 rounded-full bg-accent/50"></div>
+                    <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
                   </div>
                 )}
               </div>
