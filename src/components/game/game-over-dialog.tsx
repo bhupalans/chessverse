@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Crown, Handshake } from 'lucide-react';
-import { Kings } from '../icons/chess-pieces/classic';
+import { ClassicChessPieces } from '../icons/chess-pieces/classic';
 
 interface GameOverDialogProps {
   isOpen: boolean;
@@ -21,6 +21,10 @@ interface GameOverDialogProps {
 
 export function GameOverDialog({ isOpen, onClose, winnerName, reason }: GameOverDialogProps) {
   const isDraw = winnerName === 'draw';
+  
+  // Determine winner color. 'You' corresponds to the human player vs the bot.
+  // In a bot game, the human is always white.
+  const winnerColor = winnerName.toLowerCase().includes('white') || winnerName === 'You' ? 'w' : 'b';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -36,7 +40,7 @@ export function GameOverDialog({ isOpen, onClose, winnerName, reason }: GameOver
              <div className="relative">
                 <Crown className="w-16 h-16 text-yellow-400 absolute -top-8 -left-4 -rotate-12" />
                 <div className="w-24 h-24">
-                   <Kings color={winnerName.toLowerCase().includes('white') || winnerName === 'You' ? 'w' : 'b'} />
+                   <ClassicChessPieces type="k" color={winnerColor} />
                 </div>
             </div>
           )}
