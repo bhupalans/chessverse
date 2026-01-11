@@ -88,7 +88,7 @@ function GamePageContent() {
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     try {
-      if (game.turn() !== playerColor) return false;
+      if (game.isGameOver() || game.turn() !== playerColor) return false;
       const result = game.move(move);
       if (result) {
         setFen(game.fen());
@@ -116,6 +116,23 @@ function GamePageContent() {
        return false;
     }
   };
+  
+  const handleGameOver = (message: string) => {
+    game.move('e8=Q'); // Arbitrary invalid move to trigger game over state in chess.js
+    toast({
+      title: 'Game Over',
+      description: message,
+    });
+  };
+
+  const handleResign = () => {
+    handleGameOver('You have resigned. The bot wins.');
+  };
+
+  const handleOfferDraw = () => {
+    handleGameOver('Draw by agreement.');
+  };
+
 
   const handleStartGame = () => {
     setGameStarted(true);
@@ -160,10 +177,10 @@ function GamePageContent() {
             <div className="grid grid-cols-2 gap-2 flex-1">
               {gameStarted ? (
                 <>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={handleResign} disabled={game.isGameOver()}>
                     <Flag className="mr-2 h-4 w-4" /> Resign
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" onClick={handleOfferDraw} disabled={game.isGameOver()}>
                     <Swords className="mr-2 h-4 w-4" /> Offer Draw
                   </Button>
                 </>
