@@ -26,6 +26,8 @@ import {
 import { CHESS_THEMES } from '@/lib/chess-themes';
 import { PIECE_SETS } from '@/lib/piece-sets';
 import { ThemeContext } from '@/context/theme-context';
+import type { Color } from 'chess.js';
+import { cn } from '@/lib/utils';
 
 const PlayerCard = ({
   name,
@@ -33,14 +35,16 @@ const PlayerCard = ({
   avatar,
   isTurn,
   isBot = false,
+  color,
 }: {
   name: string;
   elo: number;
   avatar: string;
   isTurn?: boolean;
   isBot?: boolean;
+  color: 'White' | 'Black';
 }) => (
-  <div className="flex items-center justify-between">
+  <div className={cn("flex items-center justify-between p-2 rounded-lg", isTurn && "bg-primary/10")}>
     <div className="flex items-center gap-3">
       <Avatar>
         <AvatarImage src={avatar} />
@@ -49,6 +53,7 @@ const PlayerCard = ({
       <div>
         <div className="flex items-center gap-2">
           <p className="font-semibold">{name}</p>
+          <span className="text-xs font-medium text-muted-foreground">({color})</span>
           {isBot && <Bot className="h-4 w-4 text-muted-foreground" />}
         </div>
         <p className="text-sm text-muted-foreground">ELO: {elo}</p>
@@ -122,15 +127,21 @@ export function GameInfoPanel({
   isBotGame, 
   onStartGame, 
   gameStarted,
-  moves 
+  moves,
+  turn,
+  playerColor,
 }: { 
   isBotGame: boolean, 
   onStartGame: () => void, 
   gameStarted: boolean,
-  moves: string[]
+  moves: string[],
+  turn: Color,
+  playerColor: Color,
 }) {
   const opponentName = isBotGame ? 'Stockfish Bot' : 'Opponent';
   const opponentElo = isBotGame ? 2000 : 1550;
+  const opponentColor = playerColor === 'w' ? 'b' : 'w';
+
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -144,12 +155,18 @@ export function GameInfoPanel({
   for (let i = 0; i < moves.length; i += 2) {
     movePairs.push([moves[i], moves[i + 1]]);
   }
+  
+  const whitePlayer = { name: 'You', elo: 1500, avatar: PlaceHolderImages[0].imageUrl };
+  const blackPlayer = { name: opponentName, elo: opponentElo, avatar: PlaceHolderImages[1].imageUrl, isBot: isBotGame };
+
+  const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
+  const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
 
   return (
     <div className="flex h-full flex-col">
       <div className="p-4 space-y-4">
-        <PlayerCard name={opponentName} elo={opponentElo} avatar={PlaceHolderImages[1].imageUrl} isBot={isBotGame} />
-        <PlayerCard name="You" elo={1500} avatar={PlaceHolderImages[0].imageUrl} isTurn={gameStarted} />
+        <PlayerCard name={topPlayer.name} elo={topPlayer.elo} avatar={topPlayer.avatar} isBot={topPlayer.isBot} isTurn={gameStarted && turn === opponentColor} color={playerColor === 'w' ? 'Black' : 'White'}/>
+        <PlayerCard name={bottomPlayer.name} elo={bottomPlayer.elo} avatar={bottomPlayer.avatar} isTurn={gameStarted && turn === playerColor} color={playerColor === 'w' ? 'White' : 'Black'}/>
       </div>
 
       <Separator />

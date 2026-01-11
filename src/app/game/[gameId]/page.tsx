@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Chess, type Square as ChessJsSquare } from 'chess.js';
+import { Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 
 const Chessboard = dynamic(
@@ -30,13 +30,14 @@ function GamePageContent() {
   const isBotGame = playMode === 'bot';
   
   const game = useMemo(() => new Chess(), []);
-  const [board, setBoard] = useState(game.board());
+  const [fen, setFen] = useState(game.fen());
   const [history, setHistory] = useState<string[]>([]);
   const [gameStarted, setGameStarted] = useState(false);
   
   const { toast } = useToast();
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
+  const [playerColor, setPlayerColor] = useState<Color>('w');
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -50,14 +51,14 @@ function GamePageContent() {
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.js';
       script.async = true;
       script.onload = () => {
-        const sf = window.Stockfish();
+        const sf = new (window.Stockfish as any)();
         engine.current = sf;
         sf.addEventListener('message', (e: any) => {
           if (e.data?.startsWith('bestmove')) {
             const bestMove = e.data.split(' ')[1];
             if (bestMove) {
               game.move(bestMove, { sloppy: true });
-              setBoard([...game.board()]);
+              setFen(game.fen());
               setHistory(game.history({ verbose: true }).map(move => move.san));
             }
           }
@@ -75,9 +76,10 @@ function GamePageContent() {
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     try {
+      if (game.turn() !== playerColor) return false;
       const result = game.move(move);
       if (result) {
-        setBoard([...game.board()]);
+        setFen(game.fen());
         setHistory(game.history({ verbose: true }).map(move => move.san));
 
         if (isBotGame && !game.isGameOver() && engine.current) {
@@ -113,11 +115,12 @@ function GamePageContent() {
         <div className="flex flex-1 items-center justify-center bg-background p-4 lg:p-8">
           <Chessboard 
             game={game}
-            board={board}
+            fen={fen}
             onMove={makeMove}
             isBotGame={isBotGame} 
             gameStarted={gameStarted}
             isEngineLoading={isEngineLoading}
+            playerColor={playerColor}
           />
         </div>
         <div className="w-full shrink-0 border-l bg-card lg:w-[350px] lg:h-auto">
@@ -126,6 +129,8 @@ function GamePageContent() {
             onStartGame={handleStartGame} 
             gameStarted={gameStarted}
             moves={history}
+            turn={game.turn()}
+            playerColor={playerColor}
           />
         </div>
       </div>

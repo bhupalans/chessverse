@@ -1,30 +1,37 @@
 'use client';
-import { useState, useMemo, useContext } from 'react';
+import { useState, useMemo, useContext, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { type Chess, type Square as ChessJsSquare } from 'chess.js';
+import { type Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 
 export function Chessboard({
   game,
-  board,
+  fen,
   onMove,
   isBotGame,
   gameStarted,
-  isEngineLoading
+  isEngineLoading,
+  playerColor
 }: {
   game: Chess;
-  board: (string | null)[][];
+  fen: string;
   onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
   isBotGame: boolean;
   gameStarted: boolean;
   isEngineLoading: boolean;
+  playerColor: Color;
 }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
 
+  const board = useMemo(() => {
+    const tempGame = new Chess(fen);
+    return tempGame.board();
+  }, [fen]);
+  
   const handleSquareClick = (row: number, col: number) => {
     if (!gameStarted) {
       toast({
@@ -34,7 +41,13 @@ export function Chessboard({
       return;
     }
     
-    const square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row) as ChessJsSquare;
+    let square: ChessJsSquare;
+    if (playerColor === 'w') {
+      square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row) as ChessJsSquare;
+    } else {
+      square = String.fromCharCode('a'.charCodeAt(0) + (7 - col)) + (row + 1) as ChessJsSquare;
+    }
+
 
     if (game.isGameOver()) {
         toast({ title: 'Game Over' });
@@ -46,7 +59,7 @@ export function Chessboard({
       return;
     }
 
-    if(isBotGame && game.turn() === 'b'){
+    if(isBotGame && game.turn() !== playerColor){
         return;
     }
 
@@ -60,7 +73,7 @@ export function Chessboard({
       setSelectedSquare(null);
     } else {
       const piece = game.get(square);
-      if (piece && piece.color === game.turn()) {
+      if (piece && piece.color === game.turn() && piece.color === playerColor) {
         setSelectedSquare(square);
       }
     }
@@ -70,7 +83,9 @@ export function Chessboard({
     if (!selectedSquare) return new Set();
     const moves = game.moves({ square: selectedSquare, verbose: true });
     return new Set(moves.map(move => move.to));
-  }, [selectedSquare, game]);
+  }, [selectedSquare, game, fen]);
+
+  const boardToRender = playerColor === 'w' ? board : board.slice().reverse().map(row => row.slice().reverse());
 
 
   return (
@@ -78,9 +93,15 @@ export function Chessboard({
       "grid aspect-square w-full max-w-[calc(100vh-10rem)] grid-cols-8 grid-rows-8 rounded-lg overflow-hidden shadow-2xl",
       !gameStarted && "opacity-50 cursor-not-allowed"
     )}>
-      {board.map((row, rowIndex) =>
+      {boardToRender.map((row, rowIndex) =>
         row.map((piece, colIndex) => {
-          const squareName = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex) as ChessJsSquare;
+          let squareName: ChessJsSquare;
+           if (playerColor === 'w') {
+            squareName = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex) as ChessJsSquare;
+          } else {
+            squareName = String.fromCharCode('a'.charCodeAt(0) + (7-colIndex)) + (rowIndex + 1) as ChessJsSquare;
+          }
+          
           const pieceOnSquare = game.get(squareName);
 
           const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
