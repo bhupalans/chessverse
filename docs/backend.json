@@ -1,0 +1,106 @@
+
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Represents a user's profile information.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's unique ID."
+        },
+        "rating": {
+          "type": "number",
+          "description": "The user's ELO rating."
+        },
+        "gamesPlayed": {
+          "type": "number",
+          "description": "The total number of games played by the user."
+        },
+        "name": {
+            "type": "string",
+            "description": "The user's display name."
+        },
+        "avatarUrl": {
+            "type": "string",
+            "description": "URL for the user's avatar image."
+        }
+      },
+      "required": ["uid", "rating", "gamesPlayed", "name"]
+    },
+    "Game": {
+      "title": "Game",
+      "description": "Represents a single chess game.",
+      "type": "object",
+      "properties": {
+        "whiteUid": {
+          "type": "string",
+          "description": "The UID of the player playing white."
+        },
+        "blackUid": {
+          "type": "string",
+          "description": "The UID of the player playing black."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "inprogress", "completed", "draw", "resigned"],
+          "description": "The current status of the game."
+        },
+        "winner": {
+          "type": "string",
+          "description": "The UID of the winning player, or 'draw'."
+        },
+        "timeControl": {
+          "type": "string",
+          "description": "The time control for the game (e.g., '10+5')."
+        }
+      },
+      "required": ["whiteUid", "status", "timeControl"]
+    },
+    "Move": {
+      "title": "Move",
+      "description": "Represents a single move in a chess game.",
+      "type": "object",
+      "properties": {
+        "san": {
+          "type": "string",
+          "description": "The move in Standard Algebraic Notation (e.g., 'Nf3')."
+        },
+        "fen": {
+          "type": "string",
+          "description": "The board state in Forsyth-Edwards Notation after the move."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp of when the move was made."
+        }
+      },
+      "required": ["san", "fen", "timestamp"]
+    }
+  },
+  "auth": {
+    "providers": ["anonymous"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores public user profile data, keyed by user ID."
+    },
+    "/games/{gameId}": {
+      "schema": {
+        "$ref": "#/entities/Game"
+      },
+      "description": "Represents a chess game document."
+    },
+    "/games/{gameId}/moves/{moveId}": {
+      "schema": {
+        "$ref": "#/entities/Move"
+      },
+      "description": "A subcollection storing the sequence of moves for a game."
+    }
+  }
+}
