@@ -30,9 +30,9 @@ export function Chessboard({
   const { toast } = useToast();
 
   const board = useMemo(() => {
-    const tempGame = new Chess(fen);
+    const tempGame = new (game.constructor as typeof Chess)(fen);
     return tempGame.board();
-  }, [fen]);
+  }, [fen, game.constructor]);
   
   const handleSquareClick = (row: number, col: number) => {
     if (!gameStarted) {
