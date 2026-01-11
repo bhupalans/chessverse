@@ -81,7 +81,7 @@ export function GameInfoPanel() {
             ))}
           </TableBody>
         </Table>
-      </div>
+      </ScrollArea>
 
       <Separator />
 
