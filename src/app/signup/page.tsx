@@ -102,6 +102,9 @@ export default function SignupPage() {
       createUserProfile(user);
       router.push('/');
     } catch (error: any) {
+      if (error.code === 'auth/popup-closed-by-user') {
+        return; // Silently ignore this error
+      }
       console.error('Google Sign-In Error:', error);
       toast({
         variant: 'destructive',

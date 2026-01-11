@@ -55,7 +55,8 @@ export default function LoginPage() {
         title: 'Login Failed',
         description:
           error.code === 'auth/user-not-found' ||
-          error.code === 'auth/wrong-password'
+          error.code === 'auth/wrong-password' ||
+          error.code === 'auth/invalid-credential'
             ? 'Invalid email or password.'
             : 'An unexpected error occurred.',
       });
@@ -67,7 +68,10 @@ export default function LoginPage() {
     try {
       await signInWithPopup(auth, provider);
       router.push('/');
-    } catch (error) {
+    } catch (error: any) {
+      if (error.code === 'auth/popup-closed-by-user') {
+        return; // Silently ignore this error
+      }
       console.error('Google Sign-In Error:', error);
       toast({
         variant: 'destructive',
