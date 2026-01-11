@@ -13,37 +13,37 @@ const pieceStyles = {
 
 const Pawns = ({ color }: { color: PieceColor }) => (
   <svg viewBox="0 0 45 45" style={pieceStyles[color]}>
-    <path d="M22.5,9C19.74,9,17.5,11.24,17.5,14C17.5,16.05,18.7,17.8,20.42,18.66C16.41,20.44,14,24.34,14,29L31,29C31,24.34,28.59,20.44,24.58,18.66C26.3,17.8,27.5,16.05,27.5,14C27.5,11.24,25.26,9,22.5,9Z" />
+    <path d="M22.5,9C19.74,9,17.5,11.24,17.5,14C17.5,16.05,18.7,17.8,20.42,18.66C16.41,20.44,14,24.34,14,29L31,29C31,24.34,28.59,20.44,24.58,18.66C26.3,17.8,27.5,16.05,27.5,14C27.5,11.24,25.26,9,22.5,9Z" stroke-linejoin="round"/>
   </svg>
 );
 
 const Rooks = ({ color }: { color: PieceColor }) => (
   <svg viewBox="0 0 45 45" style={pieceStyles[color]}>
-    <path d="M9,39H36V36H9V39ZM12,33H33V12H12V33ZM9,9H12V12H9V9ZM15,9H18V12H15V9ZM21,9H24V12H21V9ZM27,9H30V12H27V9ZM33,9H36V12H33V9Z" />
+    <path d="M9,39H36V36H9V39ZM12.5,33V12.5h20V33h-20ZM12.5,9.5l3-3h14l3,3h-20Z" stroke-linejoin="round"/>
   </svg>
 );
 
 const Knights = ({ color }: { color: PieceColor }) => (
   <svg viewBox="0 0 45 45" style={pieceStyles[color]}>
-    <path d="M22,10C19.67,10,18,11.54,18,13.8V20.5C18,21.9,16.9,23,15.5,23C13.83,23,13,21.73,13,20C13,19.2,13.2,18.5,13.5,17.8L12.1,17.1C10.5,20.4,10.2,25.2,13.5,28C15.6,29.8,18.4,30,20.5,28.5L22,30L23.5,28.5C25.6,30,28.4,29.8,30.5,28C33.8,25.2,33.5,20.4,31.9,17.1L30.5,17.8C30.8,18.5,31,19.2,31,20C31,21.73,30.17,23,28.5,23C27.1,23,26,21.9,26,20.5V13.8C26,11.54,24.33,10,22,10Z" />
+    <path d="m 22,10 c 10.5,1 16.5,8 16,29 H 15.5 c 0,-11 2.5,-15.5 10.5,-20.5 0,2 1,4.5 2.5,4.5 2.5,0 2.5,-2.5 2.5,-4.5 0,-2 -0.5,-2.5 -1.5,-4 -0.5,-1 -1,-2.5 -3,-2.5 z" stroke-linejoin="round"/>
   </svg>
 );
 
 const Bishops = ({ color }: { color: PieceColor }) => (
   <svg viewBox="0 0 45 45" style={pieceStyles[color]}>
-    <path d="M22.5,9L16,12L22.5,25L29,12L22.5,9ZM22.5,26L17,27L14.75,32L22.5,30L30.25,32L28,27L22.5,26Z" />
+    <path d="M9,36h27v3H9v-3z M22.5,9c-2.5,0-5,1.5-5,4s2.5,4,5,4s5-1.5,5-4S25,9,22.5,9z M12.5,20l4.5-2.5l5.5,10.5l5.5-10.5l4.5,2.5V33H12.5V20z" stroke-linejoin="round"/>
   </svg>
 );
 
 const Queens = ({ color }: { color: PieceColor }) => (
   <svg viewBox="0 0 45 45" style={pieceStyles[color]}>
-    <path d="M8,12L14,35L31,35L37,12L32,13L30,11L25,13L22.5,10L20,13L15,11L13,13L8,12Z" />
+    <path d="m 8,12 3,21 h 23 l 3,-21 -5,1.5 -2,-3 -5,2 -3,-4 -3,4 -5,-2 -2,3 z" stroke-linejoin="round"/>
   </svg>
 );
 
 const Kings = ({ color }: { color: PieceColor }) => (
   <svg viewBox="0 0 45 45" style={pieceStyles[color]}>
-    <path d="M22.5,11.63L20.5,15.63L24.5,15.63L22.5,11.63M22.5,8L19,17L26,17L22.5,8M12,19L15,35L30,35L33,19H12Z" />
+    <path d="m 22.5,11.63 2,-4 v -3 h -4 v 3 l 2,4 z m 0,0 -3.5,16 h 7 l -3.5,-16 z m -10.5,15.37 3,11 h 15 l 3,-11 z M 12,39 h 21 v -3 H 12 v 3 z" stroke-linejoin="round"/>
   </svg>
 );
 
