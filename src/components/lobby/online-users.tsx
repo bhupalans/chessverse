@@ -21,9 +21,10 @@ export function OnlineUsers() {
   const { user, isUserLoading } = useUser();
 
   const usersQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    // Only create the query if the user is logged in and firestore is available.
+    if (!firestore || !user) return null;
     return query(collection(firestore, 'users'), where('onlineStatus', '==', 'online'));
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: onlineUsers, isLoading } = useCollection<UserType>(usersQuery);
 
