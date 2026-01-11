@@ -37,7 +37,7 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
         sf.postMessage('uci');
       });
     }
-  }, [isBotGame, game]);
+  }, [isBotGame, game, engineGo]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     try {

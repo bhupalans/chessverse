@@ -1,10 +1,19 @@
 'use client';
 
-import { Chessboard } from '@/components/game/chessboard';
 import { GameInfoPanel } from '@/components/game/game-info-panel';
 import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import dynamic from 'next/dynamic';
+
+const Chessboard = dynamic(
+  () => import('@/components/game/chessboard').then((mod) => mod.Chessboard),
+  {
+    ssr: false,
+    loading: () => <div className="w-full max-w-[calc(100vh-10rem)] aspect-square bg-muted/50 rounded-lg flex items-center justify-center">Loading Board...</div>
+  }
+);
+
 
 function GamePageContent() {
   const params = useParams();
