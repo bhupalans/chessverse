@@ -5,6 +5,7 @@ import { type Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 import { Chess as ChessGame } from 'chess.js';
+import { Crown, Flag } from 'lucide-react';
 
 export function Chessboard({
   fen,
@@ -14,6 +15,8 @@ export function Chessboard({
   playerColor,
   isGameOver,
   turn,
+  winner,
+  kingPositions,
 }: {
   fen: string;
   onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
@@ -22,6 +25,8 @@ export function Chessboard({
   playerColor: Color;
   isGameOver: boolean;
   turn: Color;
+  winner: 'w' | 'b' | 'd' | null;
+  kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
 }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
@@ -102,7 +107,7 @@ export function Chessboard({
         ))}
       </div>
       
-      <div className={cn("grid grid-cols-8 grid-rows-8", (isGameOver || !gameStarted) && "opacity-50")}>
+      <div className={cn("grid grid-cols-8 grid-rows-8", (isGameOver || !gameStarted) && "opacity-70")}>
         {boardToRender.map((row, rowIndex) =>
           row.map((piece, colIndex) => {
             let squareName: ChessJsSquare;
@@ -117,6 +122,10 @@ export function Chessboard({
             const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
             const isSelected = selectedSquare === squareName;
             const isPossibleMove = validMovesForSelectedPiece.has(squareName);
+
+            const isWinningKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && pieceOnSquare?.type === 'k' && pieceOnSquare?.color === winner;
+            const isLosingKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && pieceOnSquare?.type === 'k' && pieceOnSquare?.color !== winner;
+
 
             return (
               <div
@@ -139,6 +148,12 @@ export function Chessboard({
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
                     </div>
+                  )}
+                  {isWinningKingSquare && (
+                    <Crown className="absolute w-6 h-6 text-green-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ top: '-4px', left: '50%', transform: 'translateX(-50%)'}}/>
+                  )}
+                  {isLosingKingSquare && (
+                    <Flag className="absolute w-5 h-5 text-red-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ top: '-2px', left: '50%', transform: 'translateX(-50%)'}}/>
                   )}
                 </div>
               </div>

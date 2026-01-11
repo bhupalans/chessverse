@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Chess, type Square as ChessJsSquare, type Color, type Move } from 'chess.js';
+import { Chess, type Square as ChessJsSquare, type Color, type Move, type Piece } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -48,6 +48,8 @@ function GamePageContent() {
   const [fen, setFen] = useState('start');
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
+  const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
+  const [kingPositions, setKingPositions] = useState<{ w: ChessJsSquare, b: ChessJsSquare } | null>(null);
   
   const { toast } = useToast();
   const engine = useRef<any>(null);
@@ -72,17 +74,36 @@ function GamePageContent() {
       }
     }
   }, []);
+  
+  const findKingPositions = useCallback((gameInstance: Chess) => {
+    let w: ChessJsSquare | null = null;
+    let b: ChessJsSquare | null = null;
+    gameInstance.board().forEach((row) => {
+        row.forEach((piece) => {
+            if (piece && piece.type === 'k') {
+                if (piece.color === 'w') w = piece.square;
+                else b = piece.square;
+            }
+        });
+    });
+    if (w && b) {
+      setKingPositions({ w, b });
+    }
+  }, []);
 
-  const handleGameOver = useCallback((reason: string, winnerData?: 'w' | 'b' | 'd') => {
+
+  const handleGameOver = useCallback((reason: string, winner?: 'w' | 'b' | 'd') => {
       playSound('game-end');
-      const winnerColor = winnerData || (localGame.turn() === 'b' ? 'w' : 'b');
+      const winnerData = winner || (localGame.turn() === 'b' ? 'w' : 'b');
+      setWinnerColor(winnerData);
+      findKingPositions(localGame);
 
       let winnerName = 'draw';
-      if (winnerColor !== 'd') {
+      if (winnerData !== 'd') {
           if (isBotGame) {
-              winnerName = winnerColor === playerColor ? (user?.displayName || 'You') : 'Stockfish Bot';
+              winnerName = winnerData === playerColor ? (user?.displayName || 'You') : 'Stockfish Bot';
           } else if (gameData) {
-              if (winnerColor === 'w') {
+              if (winnerData === 'w') {
                   winnerName = gameData.player1?.name || 'Player 1';
               } else {
                   winnerName = gameData.player2?.name || 'Player 2';
@@ -90,7 +111,7 @@ function GamePageContent() {
           }
       }
       setGameOverState({ winner: winnerName, reason });
-  }, [isBotGame, gameData, localGame, playerColor, playSound, user]);
+  }, [isBotGame, gameData, localGame, playerColor, playSound, user, findKingPositions]);
 
   useEffect(() => {
     if (gameData?.fen) {
@@ -331,11 +352,13 @@ function GamePageContent() {
               playerColor={playerColor}
               isGameOver={finalGameOver}
               turn={currentTurn}
+              winner={winnerColor}
+              kingPositions={kingPositions}
             />
             {gameOverState && (
                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
                 <div className="text-center text-white p-8 rounded-lg">
-                    {gameOverState.winner === 'draw' ? (
+                    {winnerColor === 'd' ? (
                        <Handshake className="w-24 h-24 text-amber-400 mx-auto" />
                     ) : (
                        <Crown className="w-24 h-24 text-yellow-400 mx-auto" />
@@ -343,7 +366,7 @@ function GamePageContent() {
                     <h2 className="text-3xl font-bold mt-4">Game Over</h2>
                     <p className="text-lg mt-1">{gameOverState.reason}</p>
                     <p className="text-2xl font-semibold mt-4">
-                      {gameOverState.winner === 'draw' ? "It's a Draw!" : `${gameOverState.winner} Wins!`}
+                      {winnerColor === 'd' ? "It's a Draw!" : `${gameOverState.winner} Wins!`}
                     </p>
                     <Button 
                       className="mt-6" 
@@ -380,10 +403,10 @@ function GamePageContent() {
               ) : isBotGame ? (
                 <Button onClick={handleStartGame} className="col-span-2" disabled={isEngineLoading}>
                   <Play className="mr-2 h-4 w-4" /> 
-                  {isEngineLoading ? 'Loading Engine...' : 'Start Game'}
+                  {isEngineLoading ? 'Loading Engine...' : 'Loading Game...'}
                 </Button>
               ) : (
-                 <div className="col-span-2 text-center text-muted-foreground">Waiting for players to join...</div>
+                 <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
               )}
             </div>
              <div className="ml-2">
