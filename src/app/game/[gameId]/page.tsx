@@ -13,7 +13,7 @@ import { Flag, Play, Swords } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import type { Game as GameType } from '@/lib/types';
-import { doc } from 'firebase/firestore';
+import { doc, type DocumentData } from 'firebase/firestore';
 
 
 const Chessboard = dynamic(
@@ -127,27 +127,27 @@ function GamePageContent() {
       const result = tempGame.move(move);
       
       if (result) {
-        // If the move is valid, we update the authoritative source: Firestore.
         const newFen = tempGame.fen();
-        const newHistory = tempGame.history({ verbose: true }).map(move => move.san);
-        let newStatus = gameData?.status;
-        let winner;
+        
+        const updatePayload: Partial<GameType> & DocumentData = {
+            fen: newFen,
+            turn: tempGame.turn(),
+            moves: tempGame.history({ verbose: true }).map(move => move.san)
+        };
 
         if (tempGame.isGameOver()) {
-          newStatus = 'completed';
+          updatePayload.status = 'completed';
           if (tempGame.isCheckmate()) {
-            winner = tempGame.turn() === 'b' ? 'w' : 'b'; // The winner is the one whose turn it ISN'T
+            updatePayload.winner = tempGame.turn() === 'b' ? 'w' : 'b'; 
           } else {
-            winner = 'd'; // Draw
+            updatePayload.winner = 'd'; // Draw
           }
           handleGameOver(tempGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
         }
         
-        // The local state will be updated automatically by the `useEffect` listening to `gameData`.
         if (!isBotGame && gameRef) {
-          updateDocumentNonBlocking(gameRef, { fen: newFen, turn: tempGame.turn(), moves: newHistory, status: newStatus, winner: winner });
+          updateDocumentNonBlocking(gameRef, updatePayload);
         } else if (isBotGame) {
-           // For bot games, update local state directly and trigger engine
            setFen(newFen);
            if (!tempGame.isGameOver() && engine.current) {
              engine.current.postMessage(`position fen ${newFen}`);
@@ -290,5 +290,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    
