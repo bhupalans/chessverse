@@ -87,54 +87,71 @@ export function Chessboard({
 
   const boardToRender = playerColor === 'w' ? board : board.slice().reverse().map(row => row.slice().reverse());
 
+  const ranks = playerColor === 'w' ? ['8', '7', '6', '5', '4', '3', '2', '1'] : ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const files = playerColor === 'w' ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
 
   return (
     <div className={cn(
-      "grid aspect-square w-full max-w-[calc(100vh-10rem)] grid-cols-8 grid-rows-8 rounded-lg overflow-hidden shadow-2xl",
+      "grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] aspect-square w-full max-w-lg rounded-lg overflow-hidden shadow-2xl",
       !gameStarted && "opacity-50 cursor-not-allowed"
     )}>
-      {boardToRender.map((row, rowIndex) =>
-        row.map((piece, colIndex) => {
-          let squareName: ChessJsSquare;
-           if (playerColor === 'w') {
-            squareName = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex) as ChessJsSquare;
-          } else {
-            squareName = String.fromCharCode('a'.charCodeAt(0) + (7-colIndex)) + (rowIndex + 1) as ChessJsSquare;
-          }
-          
-          const pieceOnSquare = game.get(squareName);
+      <div className="flex flex-col text-xs font-bold text-muted-foreground pr-1">
+        {ranks.map((rank) => (
+          <div key={rank} className="flex-1 flex items-center justify-center">{rank}</div>
+        ))}
+      </div>
+      
+      <div className="grid grid-cols-8 grid-rows-8">
+        {boardToRender.map((row, rowIndex) =>
+          row.map((piece, colIndex) => {
+            let squareName: ChessJsSquare;
+            if (playerColor === 'w') {
+              squareName = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex) as ChessJsSquare;
+            } else {
+              squareName = String.fromCharCode('a'.charCodeAt(0) + (7-colIndex)) + (rowIndex + 1) as ChessJsSquare;
+            }
+            
+            const pieceOnSquare = game.get(squareName);
 
-          const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
-          const isSelected = selectedSquare === squareName;
-          const isPossibleMove = validMovesForSelectedPiece.has(squareName);
+            const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
+            const isSelected = selectedSquare === squareName;
+            const isPossibleMove = validMovesForSelectedPiece.has(squareName);
 
-          return (
-            <div
-              key={`${rowIndex}-${colIndex}`}
-              className={cn(
-                'flex items-center justify-center',
-                isLightSquare ? theme.lightSquare : theme.darkSquare
-              )}
-              onClick={() => handleSquareClick(rowIndex, colIndex)}
-            >
+            return (
               <div
+                key={`${rowIndex}-${colIndex}`}
                 className={cn(
-                  'relative flex h-full w-full items-center justify-center transition-colors',
-                  gameStarted && 'cursor-pointer',
-                  isSelected && 'bg-yellow-500/50'
+                  'flex items-center justify-center',
+                  isLightSquare ? theme.lightSquare : theme.darkSquare
                 )}
+                onClick={() => handleSquareClick(rowIndex, colIndex)}
               >
-                {pieceOnSquare && <PieceComponent type={pieceOnSquare.type} color={pieceOnSquare.color} />}
-                {isPossibleMove && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
-                  </div>
-                )}
+                <div
+                  className={cn(
+                    'relative flex h-full w-full items-center justify-center transition-colors',
+                    gameStarted && 'cursor-pointer',
+                    isSelected && 'bg-yellow-500/50'
+                  )}
+                >
+                  {pieceOnSquare && <PieceComponent type={pieceOnSquare.type} color={pieceOnSquare.color} />}
+                  {isPossibleMove && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })
-      )}
+            );
+          })
+        )}
+      </div>
+
+      <div />
+      <div className="flex text-xs font-bold text-muted-foreground pt-1">
+        {files.map((file) => (
+          <div key={file} className="flex-1 flex items-center justify-center">{file}</div>
+        ))}
+      </div>
     </div>
   );
 }
