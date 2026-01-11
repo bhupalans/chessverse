@@ -4,8 +4,6 @@ import { cn } from '@/lib/utils';
 import { Chess, type Piece as ChessJsPiece, type Square as ChessJsSquare } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
-// @ts-ignore
-import stockfish from 'stockfish';
 
 export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: boolean }) {
   const { theme, pieceSet } = useContext(ThemeContext);
@@ -24,18 +22,20 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
 
   useEffect(() => {
     if (isBotGame) {
-      const sf = stockfish();
-      engine.current = sf;
-      sf.addEventListener('message', (e: any) => {
-        if (e.data?.startsWith('bestmove')) {
-          const bestMove = e.data.split(' ')[1];
-          if (bestMove) {
-            game.move(bestMove, { sloppy: true });
-            setBoard(game.board());
+      import('stockfish').then(({ default: stockfish }) => {
+        const sf = stockfish();
+        engine.current = sf;
+        sf.addEventListener('message', (e: any) => {
+          if (e.data?.startsWith('bestmove')) {
+            const bestMove = e.data.split(' ')[1];
+            if (bestMove) {
+              game.move(bestMove, { sloppy: true });
+              setBoard(game.board());
+            }
           }
-        }
+        });
+        sf.postMessage('uci');
       });
-      sf.postMessage('uci');
     }
   }, [isBotGame, game]);
 
@@ -44,7 +44,7 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
       const result = game.move(move);
       if (result) {
         setBoard(game.board());
-        if (isBotGame && !game.isGameOver()) {
+        if (isBotGame && !game.isGameOver() && engine.current) {
           engine.current.postMessage(`position fen ${game.fen()}`);
           setTimeout(engineGo, 200);
         }
