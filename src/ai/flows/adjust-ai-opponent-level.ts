@@ -1,4 +1,3 @@
-// AdjustAIOpponentLevel story
 'use server';
 /**
  * @fileOverview An AI opponent level adjustment agent.
@@ -29,7 +28,10 @@ export async function adjustAIOpponentLevel(input: AdjustAIOpponentLevelInput): 
 const prompt = ai.definePrompt({
   name: 'adjustAIOpponentLevelPrompt',
   input: {schema: AdjustAIOpponentLevelInputSchema},
-  output: {schema: AdjustAIOpponentLevelOutputSchema},
+  output: {
+    schema: AdjustAIOpponentLevelOutputSchema,
+    format: 'json',
+  },
   prompt: `You are an AI that adjusts the difficulty level of a chess AI opponent based on the player's game history.
 
   Based on the number of completed games, recommend a difficulty level (Beginner, Intermediate, or Advanced) and provide a brief explanation for your recommendation.
