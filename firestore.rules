@@ -56,7 +56,7 @@ service cloud.firestore {
     function isNewGameValid() {
       let data = request.resource.data;
       return data.player1Id == request.auth.uid
-          && data.status == 'waiting'
+          && (data.status == 'waiting' || data.status == 'invited')
           && data.createdAt == request.time;
     }
     
@@ -99,7 +99,7 @@ service cloud.firestore {
      * Listing all users is explicitly forbidden.
      */
     match /users/{userId} {
-      allow read: if isSignedIn();
+      allow read, list: if isSignedIn();
       allow create, update: if isOwner(userId);
       allow delete: if false; // Deny deletion of user profiles.
     }
