@@ -1,36 +1,19 @@
 'use client';
 import { useState, useMemo, useContext } from 'react';
 import { cn } from '@/lib/utils';
-import type { ChessBoardState, Piece, Square } from '@/lib/types';
+import type { Piece } from '@/lib/types';
 import { Chess, type Piece as ChessJsPiece, type Square as ChessJsSquare } from 'chess.js';
-import { ChessPieceComponent } from '@/components/icons/chess-pieces';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 
-const initialBoard: ChessBoardState = [
-  // This can be simplified as chess.js will manage the board state
-  ...Array(8).fill(Array(8).fill(null))
-];
-
 export function Chessboard({ gameId }: { gameId: string }) {
-  const { theme } = useContext(ThemeContext);
+  const { theme, pieceSet } = useContext(ThemeContext);
+  const PieceComponent = pieceSet.component;
   // chess.js instance will be the source of truth for game logic
   const game = useMemo(() => new Chess(), []);
   const [board, setBoard] = useState(game.board());
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
-
-  const getPieceFromChessJs = (piece: ChessJsPiece | null): Piece | null => {
-    if (!piece) return null;
-    return {
-      type: piece.type,
-      color: piece.color,
-      square: { 
-        row: 8 - parseInt(piece.square.charAt(1)), 
-        col: piece.square.charCodeAt(0) - 'a'.charCodeAt(0) 
-      }
-    };
-  };
 
   const handleSquareClick = (row: number, col: number) => {
     const square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row);
@@ -116,7 +99,7 @@ export function Chessboard({ gameId }: { gameId: string }) {
                   isSelected && 'bg-yellow-500/50'
                 )}
               >
-                {piece && <ChessPieceComponent type={piece.type} color={piece.color} />}
+                {piece && <PieceComponent type={piece.type} color={piece.color} />}
                 {isPossibleMove && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>

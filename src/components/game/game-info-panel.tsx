@@ -1,4 +1,3 @@
-
 'use client';
 import { useContext } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -25,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { CHESS_THEMES } from '@/lib/chess-themes';
+import { PIECE_SETS } from '@/lib/piece-sets';
 import { ThemeContext } from '@/context/theme-context';
 
 
@@ -68,12 +68,19 @@ const PlayerCard = ({
 );
 
 function ThemeSelector() {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const { theme, setTheme, pieceSet, setPieceSet } = useContext(ThemeContext);
 
   const handleThemeChange = (themeId: string) => {
     const selectedTheme = CHESS_THEMES.find((t) => t.id === themeId);
     if (selectedTheme) {
       setTheme(selectedTheme);
+    }
+  };
+
+  const handlePieceSetChange = (pieceSetId: string) => {
+    const selectedPieceSet = PIECE_SETS.find((p) => p.id === pieceSetId);
+    if (selectedPieceSet) {
+      setPieceSet(selectedPieceSet);
     }
   };
 
@@ -94,6 +101,19 @@ function ThemeSelector() {
           {CHESS_THEMES.map((themeOption) => (
             <DropdownMenuRadioItem key={themeOption.id} value={themeOption.id}>
               {themeOption.name}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Piece Style</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuRadioGroup
+          value={pieceSet.id}
+          onValueChange={handlePieceSetChange}
+        >
+          {PIECE_SETS.map((pieceOption) => (
+            <DropdownMenuRadioItem key={pieceOption.id} value={pieceOption.id}>
+              {pieceOption.name}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

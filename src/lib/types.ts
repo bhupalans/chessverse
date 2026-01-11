@@ -1,3 +1,5 @@
+import type { FunctionComponent } from "react";
+
 export type Player = {
   id: string;
   name: string;
@@ -34,3 +36,11 @@ export type Piece = {
   square: Square;
 };
 export type ChessBoardState = (Piece | null)[][];
+
+export interface ChessPieceProps {
+  type: PieceType;
+  color: PieceColor;
+  className?: string;
+}
+
+export type PieceComponent = FunctionComponent<ChessPieceProps>;
