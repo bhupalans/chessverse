@@ -56,20 +56,22 @@ function GamePageContent() {
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.js';
       script.async = true;
       script.onload = () => {
-        const sf = new (window.Stockfish as any)();
-        engine.current = sf;
-        sf.addEventListener('message', (e: any) => {
-          if (e.data?.startsWith('bestmove')) {
-            const bestMove = e.data.split(' ')[1];
-            if (bestMove) {
-              game.move(bestMove, { sloppy: true });
-              setFen(game.fen());
-              setHistory(game.history({ verbose: true }).map(move => move.san));
-            }
-          }
-        });
-        sf.postMessage('uci');
-        setIsEngineLoading(false);
+        if (window.Stockfish) {
+            const sf = new (window.Stockfish as any)();
+            engine.current = sf;
+            sf.addEventListener('message', (e: any) => {
+              if (e.data?.startsWith('bestmove')) {
+                const bestMove = e.data.split(' ')[1];
+                if (bestMove) {
+                  game.move(bestMove, { sloppy: true });
+                  setFen(game.fen());
+                  setHistory(game.history({ verbose: true }).map(move => move.san));
+                }
+              }
+            });
+            sf.postMessage('uci');
+            setIsEngineLoading(false);
+        }
       };
       document.body.appendChild(script);
 
@@ -163,8 +165,9 @@ function GamePageContent() {
                   </Button>
                 </>
               ) : (
-                <Button onClick={handleStartGame} className="col-span-2">
-                  <Play className="mr-2 h-4 w-4" /> Start Game
+                <Button onClick={handleStartGame} className="col-span-2" disabled={isBotGame && isEngineLoading}>
+                  <Play className="mr-2 h-4 w-4" /> 
+                  {isBotGame && isEngineLoading ? 'Loading Engine...' : 'Start Game'}
                 </Button>
               )}
             </div>
