@@ -33,7 +33,7 @@ const mockMoves = [
   { number: 2, white: 'Nf3', black: 'Nc6' },
   { number: 3, white: 'Bb5', black: 'a6' },
   { number: 4, white: 'Ba4', black: 'Nf6' },
-  { number 5, white: 'O-O', black: 'Be7' },
+  { number: 5, white: 'O-O', black: 'Be7' },
 ];
 
 const PlayerCard = ({
