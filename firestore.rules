@@ -99,9 +99,9 @@ service cloud.firestore {
      * Listing all users is explicitly forbidden.
      */
     match /users/{userId} {
-      allow get, update: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow list, delete: if false; // Deny listing and deletion of user profiles.
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId);
+      allow delete: if false; // Deny deletion of user profiles.
     }
 
     /**
