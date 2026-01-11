@@ -1,7 +1,7 @@
 'use client';
-import { useState, useMemo, useContext, useEffect } from 'react';
+import { useState, useMemo, useContext } from 'react';
 import { cn } from '@/lib/utils';
-import { type Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
+import { type Chess, type Square as ChessJsSquare, type Color, Chess } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 
