@@ -77,15 +77,19 @@ service cloud.firestore {
     /**
      * isGameUpdateValid
      * Validates an in-progress game update (e.g., making a move).
+     * Ensures immutable fields are not changed if they are part of the request.
      */
      function isGameUpdateValid() {
         let before = resource.data;
         let after = request.resource.data;
-        // Allow players to update the game state (fen, turn, moves, etc.)
-        // but not to change the players or start time.
-        return before.player1Id == after.player1Id 
-          && before.player2Id == after.player2Id
-          && before.startTime == after.startTime;
+        
+        let immutableFieldsUnchanged = 
+          (!('player1Id' in after) || before.player1Id == after.player1Id) &&
+          (!('player2Id' in after) || before.player2Id == after.player2Id) &&
+          (!('startTime' in after) || before.startTime == after.startTime) &&
+          (!('player1' in after) || before.player1 == after.player1);
+
+        return immutableFieldsUnchanged;
      }
 
 
@@ -111,7 +115,7 @@ service cloud.firestore {
      */
     match /games/{gameId} {
       // Any authenticated user can read or list games for the lobby.
-      allow read: if isSignedIn();
+      allow read, list: if isSignedIn();
       
       // Any authenticated user can create a valid new game.
       allow create: if isSignedIn() && isNewGameValid();
