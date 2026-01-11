@@ -21,6 +21,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   updateProfile,
+  User,
 } from 'firebase/auth';
 import { doc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
@@ -49,12 +50,13 @@ export default function SignupPage() {
     },
   });
 
-  const createUserProfile = (userId: string, email: string, username: string) => {
-    const userRef = doc(firestore, 'users', userId);
+  const createUserProfile = (user: User) => {
+    if (!user.email || !user.uid) return;
+    const userRef = doc(firestore, 'users', user.uid);
     setDocumentNonBlocking(userRef, {
-      id: userId,
-      email,
-      username,
+      id: user.uid,
+      email: user.email,
+      username: user.displayName || 'Anonymous',
       eloRating: 1200,
       completedGames: 0,
     }, { merge: true });
@@ -69,9 +71,18 @@ export default function SignupPage() {
       );
       const user = userCredential.user;
       await updateProfile(user, { displayName: data.username });
-      createUserProfile(user.uid, user.email!, user.displayName!);
+      
+      // We need to create a new user object with the updated displayName
+      const updatedUser = {
+        ...user,
+        displayName: data.username,
+        email: data.email
+      } as User;
+
+      createUserProfile(updatedUser);
       router.push('/');
     } catch (error: any) {
+      console.error("Sign up error", error);
       toast({
         variant: 'destructive',
         title: 'Sign Up Failed',
@@ -88,10 +99,9 @@ export default function SignupPage() {
     try {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
-      // Check if user profile already exists to avoid overwriting
-      createUserProfile(user.uid, user.email!, user.displayName || 'Anonymous');
+      createUserProfile(user);
       router.push('/');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google Sign-In Error:', error);
       toast({
         variant: 'destructive',
