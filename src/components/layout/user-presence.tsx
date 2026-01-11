@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useUser, useFirestore } from '@/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 export function UserPresence() {
   const { user } = useUser();
@@ -16,28 +16,23 @@ export function UserPresence() {
         onlineStatus: 'online',
         lastSeen: serverTimestamp(),
       };
+
+      // Set user to online when the component mounts and user is available
+      updateDoc(userStatusRef, onlineStatus);
       
-      const offlineStatus = {
-        onlineStatus: 'offline',
-        lastSeen: serverTimestamp(),
-      };
-
-      // Set user to online
-      setDoc(userStatusRef, onlineStatus, { merge: true });
-
-      const handleBeforeUnload = () => {
-        // This is not guaranteed to run, but it's a good-faith effort
-        // to set the user as offline when they close the tab.
-        // A more robust solution might involve a Cloud Function
-        // to clean up stale online statuses.
-        setDoc(userStatusRef, offlineStatus, { merge: true });
+      const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+          if (user?.uid) {
+            const userStatusRef = doc(firestore, 'users', user.uid);
+            await updateDoc(userStatusRef, {
+                onlineStatus: 'offline',
+                lastSeen: serverTimestamp(),
+            });
+          }
       };
 
       window.addEventListener('beforeunload', handleBeforeUnload);
 
       return () => {
-        // When the component unmounts (e.g., user logs out), set to offline.
-        setDoc(userStatusRef, offlineStatus, { merge: true });
         window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     }

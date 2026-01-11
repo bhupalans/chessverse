@@ -12,16 +12,25 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Crown, History, LogIn, LogOut, User } from 'lucide-react';
-import { useAuth, useUser } from '@/firebase';
+import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 export function Header() {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
 
   const handleLogout = async () => {
+    if (user) {
+      const userStatusRef = doc(firestore, 'users', user.uid);
+      await updateDoc(userStatusRef, {
+        onlineStatus: 'offline',
+        lastSeen: serverTimestamp(),
+      });
+    }
     await signOut(auth);
     router.push('/login');
   };
