@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { User as FirebaseUser } from 'firebase/auth';
 import type { User as UserType } from '@/lib/types';
 import { Chess } from 'chess.js';
+import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 interface InviteButtonProps {
     inviter: FirebaseUser | null;
@@ -41,13 +42,13 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
         player1: {
           id: inviter.uid,
           name: inviter.displayName,
-          avatarUrl: inviter.photoURL,
+          avatarUrl: inviter.photoURL || PlaceHolderImages[0].imageUrl,
           elo: 1200, // Placeholder
         },
         player2: {
           id: invitee.id,
           name: invitee.username,
-          avatarUrl: invitee.avatarUrl,
+          avatarUrl: invitee.avatarUrl || PlaceHolderImages[1].imageUrl,
           elo: invitee.eloRating,
         },
         status: 'invited',
