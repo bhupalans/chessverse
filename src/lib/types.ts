@@ -11,7 +11,11 @@ export type GameStatus = 'waiting' | 'inprogress' | 'completed';
 
 export type Game = {
   id: string;
-  players: [Player, Player?];
+  player1Id?: string;
+  player2Id?: string;
+  player1?: Player;
+  player2?: Player;
+  players: [Player, Player?]; // Keep for compatibility if used elsewhere
   status: GameStatus;
   eloGain?: number;
 };

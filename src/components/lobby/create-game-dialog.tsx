@@ -11,17 +11,59 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Bot, PlusCircle, User } from 'lucide-react';
+import { Bot, PlusCircle, User as UserIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAuth, useFirestore, useUser } from '@/firebase';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 export function CreateGameDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
+  const firestore = useFirestore();
+  const { user } = useUser();
+  const { toast } = useToast();
 
-  const handleCreateGame = (isBotGame: boolean) => {
+  const handleCreateBotGame = () => {
     const gameId = `game-${Math.random().toString(36).substr(2, 9)}`;
-    const url = isBotGame ? `/game/${gameId}?play=bot` : `/game/${gameId}`;
+    const url = `/game/${gameId}?play=bot`;
     router.push(url);
+    setIsOpen(false);
+  };
+
+  const handleCreatePlayerGame = async () => {
+    if (!user) {
+      toast({
+        variant: 'destructive',
+        title: 'Not Logged In',
+        description: 'You must be logged in to create a game.',
+      });
+      return;
+    }
+
+    try {
+      const gamesCollection = collection(firestore, 'games');
+      const newGameDoc = await addDoc(gamesCollection, {
+        player1Id: user.uid,
+        player1: {
+          id: user.uid,
+          name: user.displayName || 'Anonymous',
+          avatarUrl: user.photoURL || '',
+        },
+        status: 'waiting',
+        createdAt: serverTimestamp(),
+        turn: 'w',
+      });
+      router.push(`/game/${newGameDoc.id}`);
+    } catch (error) {
+      console.error('Error creating game:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Could not create game. Please try again.',
+      });
+    }
+
     setIsOpen(false);
   };
 
@@ -44,7 +86,7 @@ export function CreateGameDialog() {
           <Button
             variant="outline"
             className="h-24 flex-col"
-            onClick={() => handleCreateGame(true)}
+            onClick={handleCreateBotGame}
           >
             <Bot className="h-8 w-8 mb-2" />
             Play vs Bot
@@ -52,12 +94,14 @@ export function CreateGameDialog() {
            <Button
             variant="outline"
             className="h-24 flex-col"
-            onClick={() => handleCreateGame(false)}
+            onClick={handleCreatePlayerGame}
+            disabled={!user}
           >
-            <User className="h-8 w-8 mb-2" />
+            <UserIcon className="h-8 w-8 mb-2" />
             Play vs Player
           </Button>
         </div>
+        {!user && <p className="text-center text-sm text-muted-foreground">Log in to play against another player.</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
         </DialogFooter>

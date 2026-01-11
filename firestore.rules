@@ -1,29 +1,21 @@
 /**
- * Core Philosophy: This ruleset enforces a strict user-ownership model. All user-related data,
- * including profiles and game histories, is stored in a private data tree accessible only to the
- * authenticated owner. This ensures strong data isolation between users.
+ * Core Philosophy: This ruleset enforces a strict user-ownership model for user-specific data,
+ * while allowing public read access for shared game data to enable a lobby system.
  *
- * Data Structure: The database is structured around a top-level `/users` collection. Each user's
- * data is nested under their unique user ID (`/users/{userId}`), creating a clear and secure
- * ownership hierarchy. Game data is stored in a subcollection (`/users/{userId}/games/{gameId}`),
- * further reinforcing this ownership model.
+ * Data Structure:
+ * - `/users/{userId}`: Private data tree for each user, accessible only by the owner.
+ * - `/games/{gameId}`: Publicly listable and readable collection for game states.
+ *   Write access is restricted to the players involved in the game.
  *
  * Key Security Decisions:
- * - User Listing Disabled: To protect user privacy and prevent data scraping, it is not possible
- *   to query or list all documents in the top-level `/users` collection.
- * - Strict Path-Based Ownership: Access to any document under `/users/{userId}` is granted only
- *   if the requester's authenticated UID matches the `{userId}` in the path. This is the primary
- *   security mechanism.
- * - Default Deny: All operations are denied by default unless explicitly permitted by a rule.
- *
- * Denormalization for Authorization: The data structure inherently supports efficient authorization
- * by using the document path to denote ownership (e.g., `/users/{userId}`). This avoids the need
- * for slow and costly `get()` calls in security rules, as the owner's ID is always present in
- * the path of the resource being accessed.
- *
- * Structural Segregation: User-specific data (profiles, games) is segregated into dedicated
- * subcollections under each user's document. This is a secure and performant pattern that
- * simplifies rules for list operations, ensuring users can only query their own data.
+ * - User Listing Disabled: To protect user privacy, listing all users is forbidden.
+ * - Path-Based Ownership: Access to any document under `/users/{userId}` is granted only
+ *   if the requester's UID matches the `{userId}` in the path.
+ * - Public Game Lobby: The `/games` collection is readable by any authenticated user to
+ *   populate the game lobby.
+ * - Restricted Game Writes: Only the players participating in a game can update its state.
+ *   This prevents cheating or griefing by outside users.
+ * - Default Deny: All operations are denied by default unless explicitly permitted.
  */
 rules_version = '2';
 service cloud.firestore {
@@ -44,57 +36,58 @@ service cloud.firestore {
     /**
      * isOwner
      * Checks if the authenticated user's UID matches the provided userId.
-     * This is the primary function for enforcing data ownership.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-
+    
     /**
-     * isExistingOwner
-     * Combines an ownership check with a verification that the document
-     * already exists. This is critical for secure update and delete operations.
+     * isPlayer
+     * Checks if the requesting user is one of the two players in the game.
      */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
-    // ------------------------------------------------------------------------
-    // Data Integrity Validation Helpers
-    // ------------------------------------------------------------------------
-
-    /**
-     * isNewUserValid
-     * Ensures that a new user document has an 'id' field that matches
-     * the document's ID and the authenticated user's UID.
-     */
-    function isNewUserValid(userId) {
-      return request.resource.data.id == userId;
-    }
-
-    /**
-     * isExistingUserValid
-     * Enforces immutability of the 'id' field on user profile updates.
-     */
-    function isExistingUserValid() {
-      return request.resource.data.id == resource.data.id;
+    function isPlayer(gameResource) {
+      return isSignedIn() && (request.auth.uid == gameResource.data.player1Id || request.auth.uid == gameResource.data.player2Id);
     }
     
     /**
      * isNewGameValid
-     * Ensures a new game document has an 'id' field matching its document ID.
+     * Ensures required fields are present on game creation.
      */
-    function isNewGameValid(gameId) {
-      return request.resource.data.id == gameId;
+    function isNewGameValid() {
+      let data = request.resource.data;
+      return data.player1Id == request.auth.uid
+          && data.status == 'waiting'
+          && data.createdAt == request.time;
+    }
+    
+    /**
+     * isGameJoinValid
+     * Validates a user joining an existing game.
+     */
+    function isGameJoinValid() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status == 'waiting'
+          && after.status == 'inprogress'
+          && before.player1Id != request.auth.uid // Can't join your own game
+          && after.player2Id == request.auth.uid
+          && before.keys().removeAll(['player2Id', 'player2', 'status']) == after.keys().removeAll(['player2Id', 'player2', 'status']);
     }
 
     /**
-     * isExistingGameValid
-     * Enforces immutability of the 'id' field on game document updates.
+     * isGameUpdateValid
+     * Validates an in-progress game update (e.g., making a move).
      */
-    function isExistingGameValid() {
-      return request.resource.data.id == resource.data.id;
-    }
+     function isGameUpdateValid() {
+        let before = resource.data;
+        let after = request.resource.data;
+        // Allow players to update the game state (fen, turn, moves, etc.)
+        // but not to change the players or start time.
+        return before.player1Id == after.player1Id 
+          && before.player2Id == after.player2Id
+          && before.startTime == after.startTime;
+     }
+
 
     // ------------------------------------------------------------------------
     // Collection Rules
@@ -102,42 +95,32 @@ service cloud.firestore {
 
     /**
      * @description Defines access control for user profile documents. A user can create,
-     * read, update, and delete their own profile, but cannot access anyone else's.
+     * read, and update their own profile, but cannot access anyone else's.
      * Listing all users is explicitly forbidden.
-     * @path /users/{userId}
-     * @allow (get) An authenticated user with UID 'user_abc' can read '/users/user_abc'.
-     * @allow (create) An authenticated user with UID 'user_abc' can create '/users/user_abc' if the document data includes `id: 'user_abc'`.
-     * @deny (get) A user with UID 'user_xyz' cannot read '/users/user_abc'.
-     * @deny (list) No user can query the '/users' collection.
-     * @principle Restricts access to a user's own data tree (Self-Creation & Ownership).
      */
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isNewUserValid(userId);
-      allow update: if isExistingOwner(userId) && isExistingUserValid();
-      allow delete: if isExistingOwner(userId);
-
-      // Deny listing of all user profiles for privacy and security.
-      allow list: if false;
+      allow get, update: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow list, delete: if false; // Deny listing and deletion of user profiles.
     }
 
     /**
-     * @description Defines access control for game documents, which are stored in a subcollection
-     * under the user who owns the record. A user can manage games within their
-     * own subcollection but cannot see games belonging to other users.
-     * @path /users/{userId}/games/{gameId}
-     * @allow (list) An authenticated user with UID 'user_abc' can list all documents in '/users/user_abc/games'.
-     * @allow (create) An authenticated user with UID 'user_abc' can create a new document in '/users/user_abc/games'.
-     * @deny (get) A user with UID 'user_xyz' cannot read '/users/user_abc/games/game123'.
-     * @deny (list) A user with UID 'user_xyz' cannot list documents in '/users/user_abc/games'.
-     * @principle Enforces strict data ownership by scoping all game data within a user's private data tree.
+     * @description Defines access control for game documents. Games are publicly readable
+     * to populate the lobby. Creating a game is allowed for any signed-in user.
+     * Updating a game is restricted to the players in that game.
      */
-    match /users/{userId}/games/{gameId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId) && isNewGameValid(gameId);
-      allow update: if isExistingOwner(userId) && isExistingGameValid();
-      allow delete: if isExistingOwner(userId);
+    match /games/{gameId} {
+      // Allow any authenticated user to read games for the lobby.
+      allow get, list: if isSignedIn();
+      
+      // Allow any authenticated user to create a new game.
+      allow create: if isSignedIn() && isNewGameValid();
+
+      // Allow players to update the game (join, make moves).
+      allow update: if isPlayer(resource) && (isGameJoinValid() || isGameUpdateValid());
+      
+      // Only a player can delete a game they are in (e.g., if it's a waiting game they created).
+      allow delete: if isPlayer(resource);
     }
   }
 }
