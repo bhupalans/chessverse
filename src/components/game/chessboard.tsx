@@ -5,6 +5,12 @@ import { Chess, type Piece as ChessJsPiece, type Square as ChessJsSquare } from 
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 
+declare global {
+  interface Window {
+    stockfish: any;
+  }
+}
+
 export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: boolean }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
@@ -13,6 +19,7 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
   const engine = useRef<any>(null);
+  const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -22,8 +29,11 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
 
   useEffect(() => {
     if (isBotGame) {
-      import('stockfish').then(({ default: stockfish }) => {
-        const sf = stockfish();
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/stockfish@15.0.0/src/stockfish.js';
+      script.async = true;
+      script.onload = () => {
+        const sf = window.stockfish();
         engine.current = sf;
         sf.addEventListener('message', (e: any) => {
           if (e.data?.startsWith('bestmove')) {
@@ -35,7 +45,13 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
           }
         });
         sf.postMessage('uci');
-      });
+        setIsEngineLoading(false);
+      };
+      document.body.appendChild(script);
+
+      return () => {
+        document.body.removeChild(script);
+      };
     }
   }, [isBotGame, game, engineGo]);
 
@@ -74,6 +90,11 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
         return;
     }
     
+    if (isEngineLoading) {
+      toast({ title: 'Please wait', description: 'Chess engine is loading...' });
+      return;
+    }
+
     if(isBotGame && game.turn() === 'b'){
         return;
     }
