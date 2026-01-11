@@ -1,0 +1,12 @@
+diff --git a/node_modules/stockfish/stockfish.js b/node_modules/stockfish/stockfish.js
+index 451488c..a489115 100644
+--- a/node_modules/stockfish/stockfish.js
++++ b/node_modules/stockfish/stockfish.js
+@@ -1,5 +1,5 @@
+ 'use strict';
+-if (process.browser) {
++if (typeof window !== 'undefined') {
+   module.exports = require('./src/stockfish-web.js');
+ } else {
+   module.exports = require('./src/stockfish-node.js');
+
