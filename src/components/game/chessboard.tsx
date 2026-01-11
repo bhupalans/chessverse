@@ -1,86 +1,29 @@
 'use client';
-import { useState, useMemo, useContext, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useContext } from 'react';
 import { cn } from '@/lib/utils';
-import { Chess, type Piece as ChessJsPiece, type Square as ChessJsSquare } from 'chess.js';
+import { type Chess, type Square as ChessJsSquare } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 
-declare global {
-  interface Window {
-    Stockfish: any;
-  }
-}
-
-export function Chessboard({ gameId, isBotGame, gameStarted }: { gameId: string, isBotGame: boolean, gameStarted: boolean }) {
+export function Chessboard({
+  game,
+  board,
+  onMove,
+  isBotGame,
+  gameStarted,
+  isEngineLoading
+}: {
+  game: Chess;
+  board: (string | null)[][];
+  onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
+  isBotGame: boolean;
+  gameStarted: boolean;
+  isEngineLoading: boolean;
+}) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
-  const game = useMemo(() => new Chess(), []);
-  const [board, setBoard] = useState(game.board());
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
-  const engine = useRef<any>(null);
-  const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
-
-  const engineGo = useCallback(() => {
-    if (engine.current) {
-      engine.current.postMessage('go depth 15');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isBotGame) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.js';
-      script.async = true;
-      script.onload = () => {
-        const sf = window.Stockfish();
-        engine.current = sf;
-        sf.addEventListener('message', (e: any) => {
-          if (e.data?.startsWith('bestmove')) {
-            const bestMove = e.data.split(' ')[1];
-            if (bestMove) {
-              game.move(bestMove, { sloppy: true });
-              setBoard(game.board());
-            }
-          }
-        });
-        sf.postMessage('uci');
-        setIsEngineLoading(false);
-      };
-      document.body.appendChild(script);
-
-      return () => {
-        document.body.removeChild(script);
-      };
-    }
-  }, [isBotGame, game, engineGo]);
-
-  const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    try {
-      const result = game.move(move);
-      if (result) {
-        setBoard(game.board());
-        if (isBotGame && !game.isGameOver() && engine.current) {
-          engine.current.postMessage(`position fen ${game.fen()}`);
-          setTimeout(engineGo, 200);
-        }
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Invalid Move',
-          description: 'You cannot move the piece to that square.',
-        });
-      }
-    } catch (e: any) {
-       toast({
-          variant: 'destructive',
-          title: 'Invalid Move',
-          description: e.message || 'The move is not allowed.',
-        });
-    } finally {
-      setSelectedSquare(null);
-    }
-  };
 
   const handleSquareClick = (row: number, col: number) => {
     if (!gameStarted) {
@@ -108,11 +51,13 @@ export function Chessboard({ gameId, isBotGame, gameStarted }: { gameId: string,
     }
 
     if (selectedSquare) {
-       makeMove({
+       const moveSuccessful = onMove({
         from: selectedSquare,
         to: square,
         promotion: 'q', // Always promote to queen for simplicity
       });
+      // Deselect square whether move was successful or not
+      setSelectedSquare(null);
     } else {
       const piece = game.get(square);
       if (piece && piece.color === game.turn()) {
@@ -135,10 +80,12 @@ export function Chessboard({ gameId, isBotGame, gameStarted }: { gameId: string,
     )}>
       {board.map((row, rowIndex) =>
         row.map((piece, colIndex) => {
-          const square = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex);
+          const squareName = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex) as ChessJsSquare;
+          const pieceOnSquare = game.get(squareName);
+
           const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
-          const isSelected = selectedSquare === square;
-          const isPossibleMove = validMovesForSelectedPiece.has(square);
+          const isSelected = selectedSquare === squareName;
+          const isPossibleMove = validMovesForSelectedPiece.has(squareName);
 
           return (
             <div
@@ -156,7 +103,7 @@ export function Chessboard({ gameId, isBotGame, gameStarted }: { gameId: string,
                   isSelected && 'bg-yellow-500/50'
                 )}
               >
-                {piece && <PieceComponent type={piece.type} color={piece.color} />}
+                {pieceOnSquare && <PieceComponent type={pieceOnSquare.type} color={pieceOnSquare.color} />}
                 {isPossibleMove && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>

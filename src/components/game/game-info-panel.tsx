@@ -1,5 +1,5 @@
 'use client';
-import { useContext, useState } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -26,14 +26,6 @@ import {
 import { CHESS_THEMES } from '@/lib/chess-themes';
 import { PIECE_SETS } from '@/lib/piece-sets';
 import { ThemeContext } from '@/context/theme-context';
-
-const mockMoves = [
-  { number: 1, white: 'e4', black: 'e5' },
-  { number: 2, white: 'Nf3', black: 'Nc6' },
-  { number: 3, white: 'Bb5', black: 'a6' },
-  { number: 4, white: 'Ba4', black: 'Nf6' },
-  { number: 5, white: 'O-O', black: 'Be7' },
-];
 
 const PlayerCard = ({
   name,
@@ -126,10 +118,32 @@ function ThemeSelector() {
   );
 }
 
-
-export function GameInfoPanel({ isBotGame, onStartGame, gameStarted }: { isBotGame: boolean, onStartGame: () => void, gameStarted: boolean }) {
+export function GameInfoPanel({ 
+  isBotGame, 
+  onStartGame, 
+  gameStarted,
+  moves 
+}: { 
+  isBotGame: boolean, 
+  onStartGame: () => void, 
+  gameStarted: boolean,
+  moves: string[]
+}) {
   const opponentName = isBotGame ? 'Stockfish Bot' : 'Opponent';
   const opponentElo = isBotGame ? 2000 : 1550;
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    }
+  }, [moves]);
+
+  // Group moves into pairs of [white, black]
+  const movePairs: [string, string?][] = [];
+  for (let i = 0; i < moves.length; i += 2) {
+    movePairs.push([moves[i], moves[i + 1]]);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -140,7 +154,7 @@ export function GameInfoPanel({ isBotGame, onStartGame, gameStarted }: { isBotGa
 
       <Separator />
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1" ref={scrollAreaRef}>
         <Table>
           <TableHeader className="sticky top-0 bg-card">
             <TableRow>
@@ -150,11 +164,11 @@ export function GameInfoPanel({ isBotGame, onStartGame, gameStarted }: { isBotGa
             </TableRow>
           </TableHeader>
           <TableBody>
-            {mockMoves.map((move) => (
-              <TableRow key={move.number}>
-                <TableCell className="text-center text-muted-foreground">{move.number}</TableCell>
-                <TableCell className="text-center font-medium">{move.white}</TableCell>
-                <TableCell className="text-center font-medium">{move.black}</TableCell>
+            {movePairs.map((pair, index) => (
+              <TableRow key={index}>
+                <TableCell className="text-center text-muted-foreground">{index + 1}</TableCell>
+                <TableCell className="text-center font-medium">{pair[0]}</TableCell>
+                <TableCell className="text-center font-medium">{pair[1] || ''}</TableCell>
               </TableRow>
             ))}
           </TableBody>
