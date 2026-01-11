@@ -7,7 +7,7 @@ import { ThemeContext } from '@/context/theme-context';
 
 declare global {
   interface Window {
-    stockfish: any;
+    Stockfish: any;
   }
 }
 
@@ -30,10 +30,10 @@ export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: b
   useEffect(() => {
     if (isBotGame) {
       const script = document.createElement('script');
-      script.src = 'https://unpkg.com/stockfish@15.0.0/src/stockfish.js';
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.js';
       script.async = true;
       script.onload = () => {
-        const sf = window.stockfish();
+        const sf = window.Stockfish();
         engine.current = sf;
         sf.addEventListener('message', (e: any) => {
           if (e.data?.startsWith('bestmove')) {
