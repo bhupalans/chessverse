@@ -43,8 +43,7 @@ function GamePageContent() {
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
 
   const localGame = useMemo(() => new Chess(), []);
-  const [fen, setFen] = useState(localGame.fen());
-  const [history, setHistory] = useState<string[]>([]);
+  const [fen, setFen] = useState('start');
   const [gameStarted, setGameStarted] = useState(false);
   
   const { toast } = useToast();
@@ -53,16 +52,17 @@ function GamePageContent() {
   
   const playerColor = useMemo(() => {
     if (!gameData || !user) return 'w';
+    if (isBotGame) return 'w'; // In bot games, user is always white
     return gameData.player1Id === user.uid ? 'w' : 'b';
-  }, [gameData, user]);
+  }, [gameData, user, isBotGame]);
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
 
   useEffect(() => {
     if (gameData?.fen) {
+      // **Single Source of Truth**: Always load the game state from Firestore
       localGame.load(gameData.fen);
       setFen(localGame.fen());
-      setHistory(localGame.history({ verbose: true }).map(move => move.san));
     }
      if (gameData?.status === 'inprogress') {
       setGameStarted(true);
@@ -90,7 +90,9 @@ function GamePageContent() {
                 if (bestMove && localGame.turn() === opponentColor) {
                   localGame.move(bestMove, { sloppy: true });
                   setFen(localGame.fen());
-                  setHistory(localGame.history({ verbose: true }).map(move => move.san));
+                  if (localGame.isGameOver()) {
+                    handleGameOver(localGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
+                  }
                 }
               }
               if (e.data === 'uciok') {
@@ -116,30 +118,44 @@ function GamePageContent() {
   const isGameOver = useMemo(() => gameData?.status === 'completed' || localGame.isGameOver(), [gameData, localGame]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    try {
-      if (isGameOver || localGame.turn() !== playerColor) return false;
-      const result = localGame.move(move);
-      if (result) {
-        const newFen = localGame.fen();
-        const newHistory = localGame.history({ verbose: true }).map(move => move.san);
-        setFen(newFen);
-        setHistory(newHistory);
-        
-        let newStatus = gameData?.status;
-        if (localGame.isGameOver()) {
-          newStatus = 'completed';
-          handleGameOver(localGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
-        }
-        
-        if (!isBotGame && gameRef) {
-          updateDocumentNonBlocking(gameRef, { fen: newFen, turn: localGame.turn(), moves: newHistory, status: newStatus });
-        }
+    const currentTurn = gameData?.turn || localGame.turn();
+    if (isGameOver || currentTurn !== playerColor) return false;
 
-        if (isBotGame && !localGame.isGameOver() && engine.current) {
-          engine.current.postMessage(`position fen ${localGame.fen()}`);
-          setTimeout(engineGo, 200);
+    try {
+      // We attempt the move on a temporary clone to validate it.
+      const tempGame = new Chess(localGame.fen());
+      const result = tempGame.move(move);
+      
+      if (result) {
+        // If the move is valid, we update the authoritative source: Firestore.
+        const newFen = tempGame.fen();
+        const newHistory = tempGame.history({ verbose: true }).map(move => move.san);
+        let newStatus = gameData?.status;
+        let winner;
+
+        if (tempGame.isGameOver()) {
+          newStatus = 'completed';
+          if (tempGame.isCheckmate()) {
+            winner = tempGame.turn() === 'b' ? 'w' : 'b'; // The winner is the one whose turn it ISN'T
+          } else {
+            winner = 'd'; // Draw
+          }
+          handleGameOver(tempGame.isCheckmate() ? 'Checkmate!' : 'Game Over');
+        }
+        
+        // The local state will be updated automatically by the `useEffect` listening to `gameData`.
+        if (!isBotGame && gameRef) {
+          updateDocumentNonBlocking(gameRef, { fen: newFen, turn: tempGame.turn(), moves: newHistory, status: newStatus, winner: winner });
+        } else if (isBotGame) {
+           // For bot games, update local state directly and trigger engine
+           setFen(newFen);
+           if (!tempGame.isGameOver() && engine.current) {
+             engine.current.postMessage(`position fen ${newFen}`);
+             setTimeout(engineGo, 200);
+           }
         }
         return true;
+
       } else {
         toast({
           variant: 'destructive',
@@ -166,34 +182,35 @@ function GamePageContent() {
   };
 
   const handleResign = () => {
-    if (gameRef) {
+    if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { status: 'completed', winner: opponentColor });
     }
-    handleGameOver(`You have resigned. ${isBotGame ? 'The bot' : gameData?.player2?.name} wins.`);
+    const opponentName = isBotGame ? 'The bot' : gameData?.player1Id === user?.uid ? gameData?.player2?.name : gameData?.player1?.name;
+    handleGameOver(`You have resigned. ${opponentName} wins.`);
   };
 
   const handleOfferDraw = () => {
-    if(gameRef){
+    if(!isBotGame && gameRef){
       updateDocumentNonBlocking(gameRef, { status: 'completed', winner: 'd' }); // 'd' for draw
     }
     handleGameOver('Draw by agreement.');
   };
 
-
   const handleStartGame = () => {
      if(isBotGame) {
        setGameStarted(true);
+       setFen(localGame.fen());
      }
   };
 
-  // Define players based on game type
-  const botPlayer = { name: 'Stockfish Bot', elo: 2000, avatar: PlaceHolderImages[1].imageUrl, isBot: true };
+  const botPlayer = { name: 'Stockfish Bot', elo: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl };
+  const humanPlayer = { name: user?.displayName || 'You', elo: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl };
   
-  const p1 = isBotGame ? { name: 'You', elo: 1500, avatar: PlaceHolderImages[0].imageUrl } : (gameData?.player1 || { name: 'Player 1', elo: 1200, avatar: PlaceHolderImages[0].imageUrl });
-  const p2 = isBotGame ? botPlayer : (gameData?.player2 || { name: 'Player 2', elo: 1200, avatar: PlaceHolderImages[1].imageUrl });
+  const p1 = isBotGame ? humanPlayer : (gameData?.player1 || { name: 'Player 1', elo: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl });
+  const p2 = isBotGame ? botPlayer : (gameData?.player2 || { name: 'Player 2', elo: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl });
 
-  const whitePlayer = gameData?.player1Id === user?.uid || playerColor === 'w' ? p1 : p2;
-  const blackPlayer = gameData?.player1Id === user?.uid || playerColor === 'w' ? p2 : p1;
+  const whitePlayer = playerColor === 'w' ? p1 : p2;
+  const blackPlayer = playerColor === 'w' ? p2 : p1;
   
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
@@ -203,6 +220,9 @@ function GamePageContent() {
   if (isGameLoading) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
+   if (!gameData && !isBotGame) {
+    return <div className="flex h-full items-center justify-center">Game not found.</div>;
+  }
 
   return (
     <ThemeProvider>
@@ -211,13 +231,13 @@ function GamePageContent() {
           <PlayerCard 
             name={topPlayer.name} 
             elo={topPlayer.elo} 
-            avatar={topPlayer.avatarUrl || PlaceHolderImages[1].imageUrl}
-            isBot={isBotGame && topPlayer === botPlayer} 
+            avatar={topPlayer.avatarUrl}
+            isBot={isBotGame && topPlayer.name === botPlayer.name} 
             isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
             color={playerColor === 'w' ? 'Black' : 'White'}
           />
           <Chessboard 
-            fen={fen}
+            fen={fen === 'start' && gameData?.fen ? gameData.fen : fen}
             onMove={makeMove}
             gameStarted={gameStarted}
             isEngineLoading={isEngineLoading}
@@ -228,7 +248,7 @@ function GamePageContent() {
            <PlayerCard 
             name={bottomPlayer.name} 
             elo={bottomPlayer.elo} 
-            avatar={bottomPlayer.avatarUrl || PlaceHolderImages[0].imageUrl}
+            avatar={bottomPlayer.avatarUrl}
             isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
             color={playerColor === 'w' ? 'White' : 'Black'}
           />
@@ -250,7 +270,7 @@ function GamePageContent() {
                   {isEngineLoading ? 'Loading Engine...' : 'Start Game'}
                 </Button>
               ) : (
-                 <div className="col-span-2 text-center text-muted-foreground">Waiting for players...</div>
+                 <div className="col-span-2 text-center text-muted-foreground">Waiting for players to join...</div>
               )}
             </div>
              <div className="ml-2">
@@ -270,3 +290,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    
