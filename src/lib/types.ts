@@ -29,6 +29,7 @@ export type Game = {
   turn: 'w' | 'b';
   moves: string[];
   winner?: 'w' | 'b' | 'd'; // d for draw
+  drawOffer?: 'w' | 'b' | null;
 };
 
 export type HistoryGame = {
