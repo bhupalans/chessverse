@@ -1,6 +1,7 @@
 import type { PieceComponent } from './types';
 import { ClassicChessPieces } from '@/components/icons/chess-pieces/classic';
 import { ModernChessPieces } from '@/components/icons/chess-pieces/modern';
+import { AlphaChessPieces } from '@/components/icons/chess-pieces/alpha';
 
 export type PieceSet = {
   id: string;
@@ -18,5 +19,10 @@ export const PIECE_SETS: PieceSet[] = [
     id: 'modern',
     name: 'Modern',
     component: ModernChessPieces,
+  },
+  {
+    id: 'alpha',
+    name: 'Alpha',
+    component: AlphaChessPieces,
   },
 ];
