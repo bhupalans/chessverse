@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Flag, Swords, Timer, Settings } from 'lucide-react';
+import { Flag, Swords, Timer, Settings, Bot } from 'lucide-react';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import {
   DropdownMenu,
@@ -33,7 +33,7 @@ const mockMoves = [
   { number: 2, white: 'Nf3', black: 'Nc6' },
   { number: 3, white: 'Bb5', black: 'a6' },
   { number: 4, white: 'Ba4', black: 'Nf6' },
-  { number: 5, white: 'O-O', black: 'Be7' },
+  { number 5, white: 'O-O', black: 'Be7' },
 ];
 
 const PlayerCard = ({
@@ -41,11 +41,13 @@ const PlayerCard = ({
   elo,
   avatar,
   isTurn,
+  isBot = false,
 }: {
   name: string;
   elo: number;
   avatar: string;
   isTurn?: boolean;
+  isBot?: boolean;
 }) => (
   <div className="flex items-center justify-between">
     <div className="flex items-center gap-3">
@@ -54,7 +56,10 @@ const PlayerCard = ({
         <AvatarFallback>{name.charAt(0)}</AvatarFallback>
       </Avatar>
       <div>
-        <p className="font-semibold">{name}</p>
+        <div className="flex items-center gap-2">
+          <p className="font-semibold">{name}</p>
+          {isBot && <Bot className="h-4 w-4 text-muted-foreground" />}
+        </div>
         <p className="text-sm text-muted-foreground">ELO: {elo}</p>
       </div>
     </div>
@@ -123,11 +128,14 @@ function ThemeSelector() {
 }
 
 
-export function GameInfoPanel() {
+export function GameInfoPanel({ isBotGame }: { isBotGame: boolean }) {
+  const opponentName = isBotGame ? 'Stockfish Bot' : 'Opponent';
+  const opponentElo = isBotGame ? 2000 : 1550;
+
   return (
     <div className="flex h-full flex-col">
       <div className="p-4 space-y-4">
-        <PlayerCard name="Opponent" elo={1550} avatar={PlaceHolderImages[1].imageUrl} />
+        <PlayerCard name={opponentName} elo={opponentElo} avatar={PlaceHolderImages[1].imageUrl} isBot={isBotGame} />
         <PlayerCard name="You" elo={1500} avatar={PlaceHolderImages[0].imageUrl} isTurn />
       </div>
 

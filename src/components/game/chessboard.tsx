@@ -1,69 +1,93 @@
 'use client';
-import { useState, useMemo, useContext } from 'react';
+import { useState, useMemo, useContext, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import type { Piece } from '@/lib/types';
 import { Chess, type Piece as ChessJsPiece, type Square as ChessJsSquare } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
+// @ts-ignore
+import stockfish from 'stockfish';
 
-export function Chessboard({ gameId }: { gameId: string }) {
+export function Chessboard({ gameId, isBotGame }: { gameId: string, isBotGame: boolean }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
-  // chess.js instance will be the source of truth for game logic
   const game = useMemo(() => new Chess(), []);
   const [board, setBoard] = useState(game.board());
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
+  const engine = useRef<any>(null);
 
-  const handleSquareClick = (row: number, col: number) => {
-    const square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row);
+  const engineGo = useCallback(() => {
+    if (engine.current) {
+      engine.current.postMessage('go depth 15');
+    }
+  }, []);
 
-    if (selectedSquare) {
-      try {
-        const move = game.move({
-          from: selectedSquare,
-          to: square as ChessJsSquare,
-          promotion: 'q' // Always promote to queen for simplicity
-        });
-
-        if (move) {
-          // In a real app, this would write to Firestore
-          console.log('Move made:', move.san);
-          console.log('New FEN:', game.fen());
-
-          setBoard(game.board());
-          // TODO: Save move to Firestore
-          // const gameRef = doc(db, 'games', gameId);
-          // await updateDoc(gameRef, { fen: game.fen(), turn: game.turn(), lastMove: move.san });
-          // const movesRef = collection(gameRef, 'moves');
-          // await addDoc(movesRef, { san: move.san, fen: game.fen(), timestamp: serverTimestamp() });
-
-        } else {
-           toast({
-            variant: 'destructive',
-            title: 'Invalid Move',
-            description: 'You cannot move the piece to that square.',
-          });
+  useEffect(() => {
+    if (isBotGame) {
+      const sf = stockfish();
+      engine.current = sf;
+      sf.addEventListener('message', (e: any) => {
+        if (e.data?.startsWith('bestmove')) {
+          const bestMove = e.data.split(' ')[1];
+          if (bestMove) {
+            game.move(bestMove, { sloppy: true });
+            setBoard(game.board());
+          }
         }
-      } catch (e: any) {
+      });
+      sf.postMessage('uci');
+    }
+  }, [isBotGame, game]);
+
+  const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
+    try {
+      const result = game.move(move);
+      if (result) {
+        setBoard(game.board());
+        if (isBotGame && !game.isGameOver()) {
+          engine.current.postMessage(`position fen ${game.fen()}`);
+          setTimeout(engineGo, 200);
+        }
+      } else {
         toast({
+          variant: 'destructive',
+          title: 'Invalid Move',
+          description: 'You cannot move the piece to that square.',
+        });
+      }
+    } catch (e: any) {
+       toast({
           variant: 'destructive',
           title: 'Invalid Move',
           description: e.message || 'The move is not allowed.',
         });
-      } finally {
-        setSelectedSquare(null);
-      }
+    } finally {
+      setSelectedSquare(null);
+    }
+  };
+
+  const handleSquareClick = (row: number, col: number) => {
+    const square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row) as ChessJsSquare;
+
+    if (game.isGameOver()) {
+        toast({ title: 'Game Over' });
+        return;
+    }
+    
+    if(isBotGame && game.turn() === 'b'){
+        return;
+    }
+
+    if (selectedSquare) {
+       makeMove({
+        from: selectedSquare,
+        to: square,
+        promotion: 'q', // Always promote to queen for simplicity
+      });
     } else {
-      const piece = game.get(square as ChessJsSquare);
-      // For demo, let's say it's always white's turn
-      if (piece && piece.color === 'w' && game.turn() === 'w') {
-        setSelectedSquare(square as ChessJsSquare);
-      } else if (game.turn() !== 'w') {
-        toast({
-          title: 'Not Your Turn',
-          description: 'It is currently black`s turn to move.',
-        });
+      const piece = game.get(square);
+      if (piece && piece.color === game.turn()) {
+        setSelectedSquare(square);
       }
     }
   };

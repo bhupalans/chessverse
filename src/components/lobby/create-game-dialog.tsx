@@ -11,17 +11,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { PlusCircle } from 'lucide-react';
+import { Bot, PlusCircle, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export function CreateGameDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
 
-  const handleCreateGame = () => {
-    // Mock game creation and redirect
+  const handleCreateGame = (isBotGame: boolean) => {
     const gameId = `game-${Math.random().toString(36).substr(2, 9)}`;
-    router.push(`/game/${gameId}`);
+    const url = isBotGame ? `/game/${gameId}?play=bot` : `/game/${gameId}`;
+    router.push(url);
+    setIsOpen(false);
   };
 
   return (
@@ -36,17 +37,29 @@ export function CreateGameDialog() {
         <DialogHeader>
           <DialogTitle>Create a New Game</DialogTitle>
           <DialogDescription>
-            Create a new game and wait for another player to join.
+            Choose your opponent. Play against the bot or wait for another player.
           </DialogDescription>
         </DialogHeader>
-        <div className="py-4">
-          <p className="text-sm text-muted-foreground">
-            A new game will be created in the lobby. Once another player joins, the match will begin.
-          </p>
+        <div className="grid grid-cols-2 gap-4 py-4">
+          <Button
+            variant="outline"
+            className="h-24 flex-col"
+            onClick={() => handleCreateGame(true)}
+          >
+            <Bot className="h-8 w-8 mb-2" />
+            Play vs Bot
+          </Button>
+           <Button
+            variant="outline"
+            className="h-24 flex-col"
+            onClick={() => handleCreateGame(false)}
+          >
+            <User className="h-8 w-8 mb-2" />
+            Play vs Player
+          </Button>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateGame}>Create Game</Button>
+          <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
