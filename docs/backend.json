@@ -1,127 +1,132 @@
-
 {
   "entities": {
-    "UserProfile": {
-      "title": "User Profile",
-      "description": "Represents a user's profile information.",
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
       "type": "object",
+      "description": "Represents a user in the ChessVerse application.",
       "properties": {
-        "uid": {
+        "id": {
           "type": "string",
-          "description": "The user's unique ID."
+          "description": "Unique identifier for the user."
         },
-        "rating": {
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "username": {
+          "type": "string",
+          "description": "User's display name."
+        },
+        "eloRating": {
           "type": "number",
           "description": "The user's ELO rating."
         },
-        "gamesPlayed": {
+        "completedGames": {
           "type": "number",
-          "description": "The total number of games played by the user."
-        },
-        "name": {
-            "type": "string",
-            "description": "The user's display name."
-        },
-        "avatarUrl": {
-            "type": "string",
-            "description": "URL for the user's avatar image."
+          "description": "Number of games completed by the user."
         }
       },
-      "required": ["uid", "rating", "gamesPlayed", "name"]
+      "required": [
+        "id",
+        "email",
+        "username"
+      ]
     },
     "Game": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Game",
-      "description": "Represents a single chess game.",
       "type": "object",
+      "description": "Represents a chess game.",
       "properties": {
-        "whiteUid": {
+        "id": {
           "type": "string",
-          "description": "The UID of the player playing white."
+          "description": "Unique identifier for the game."
         },
-        "blackUid": {
+        "player1Id": {
           "type": "string",
-          "description": "The UID of the player playing black."
+          "description": "Reference to User 1. (Relationship: User 1:N Game)"
         },
-        "status": {
+        "player2Id": {
           "type": "string",
-          "enum": ["waiting", "inprogress", "completed", "draw", "resigned"],
-          "description": "The current status of the game."
+          "description": "Reference to User 2. (Relationship: User 1:N Game)"
         },
-        "winner": {
+        "startTime": {
           "type": "string",
-          "description": "The UID of the winning player, or 'draw'."
+          "description": "Timestamp indicating the start time of the game.",
+          "format": "date-time"
         },
-        "timeControl": {
+        "endTime": {
           "type": "string",
-          "description": "The time control for the game (e.g., '10+5')."
+          "description": "Timestamp indicating the end time of the game.",
+          "format": "date-time"
         },
-        "fen": {
-            "type": "string",
-            "description": "The current board state in Forsyth-Edwards Notation."
+        "moves": {
+          "type": "array",
+          "description": "List of chess moves in the game.",
+          "items": {
+            "type": "string"
+          }
         },
-        "turn": {
-            "type": "string",
-            "enum": ["w", "b"],
-            "description": "Whose turn it is (white 'w' or black 'b')."
-        },
-        "whiteClock": {
-            "type": "number",
-            "description": "Remaining time for the white player in seconds."
-        },
-        "blackClock": {
-            "type": "number",
-            "description": "Remaining time for the black player in seconds."
-        },
-        "lastMove": {
-            "type": "string",
-            "description": "The last move made in Standard Algebraic Notation (e.g. 'e4')."
+        "winnerId": {
+          "type": "string",
+          "description": "Reference to User who won the game. Null if the game is still ongoing or it was a draw. (Relationship: User 1:N Game)"
         }
       },
-      "required": ["whiteUid", "status", "timeControl", "fen", "turn", "whiteClock", "blackClock"]
-    },
-    "Move": {
-      "title": "Move",
-      "description": "Represents a single move in a chess game.",
-      "type": "object",
-      "properties": {
-        "san": {
-          "type": "string",
-          "description": "The move in Standard Algebraic Notation (e.g., 'Nf3')."
-        },
-        "fen": {
-          "type": "string",
-          "description": "The board state in Forsyth-Edwards Notation after the move."
-        },
-        "timestamp": {
-          "type": "string",
-          "format": "date-time",
-          "description": "The timestamp of when the move was made."
-        }
-      },
-      "required": ["san", "fen", "timestamp"]
+      "required": [
+        "id",
+        "player1Id",
+        "player2Id",
+        "startTime"
+      ]
     }
   },
   "auth": {
-    "providers": ["anonymous"]
+    "providers": [
+      "password",
+      "anonymous"
+    ]
   },
   "firestore": {
-    "/users/{userId}": {
-      "schema": {
-        "$ref": "#/entities/UserProfile"
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles. Access control is based on path-based ownership.  A user can only access their own document.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user."
+            }
+          ]
+        }
       },
-      "description": "Stores public user profile data, keyed by user ID."
-    },
-    "/games/{gameId}": {
-      "schema": {
-        "$ref": "#/entities/Game"
-      },
-      "description": "Represents a chess game document."
-    },
-    "/games/{gameId}/moves/{moveId}": {
-      "schema": {
-        "$ref": "#/entities/Move"
-      },
-      "description": "A subcollection storing the sequence of moves for a game."
-    }
+      {
+        "path": "/users/{userId}/games/{gameId}",
+        "definition": {
+          "entityName": "Game",
+          "schema": {
+            "$ref": "#/backend/entities/Game"
+          },
+          "description": "Stores games associated with a user. Access control is based on path-based ownership. A user can only access their own game documents.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier for the user (owner)."
+            },
+            {
+              "name": "gameId",
+              "description": "The unique identifier for the game."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support a real-time multiplayer chess application ('ChessVerse') with a focus on secure and scalable data management. The structure adheres to the principles of Authorization Independence, Clarity of Intent, DBAC (Database-Based Access Control), and QAPs (Rules are not Filters).\n\n**User Data:** User data is stored in a collection `/users/{userId}`. This path-based ownership simplifies security rules, as access control can be directly tied to the authenticated user's ID (`request.auth.uid`).\n\n**Game Data:** Games are stored in a subcollection `/users/{userId}/games/{gameId}`. This approach facilitates ownership based access control, allowing a user to query their games and game history without exposing data from other users. The `game` document includes `player1Id`, `player2Id`, and `winnerId`. This structure facilitates listing games associated with a particular user.\n\n**Authorization Independence:** Authorization independence is achieved by storing the required data to determine authorization directly within the relevant documents, removing the need for `get()` calls in security rules. For example, the game documents contains player IDs. The role of a player is implicitly given by the `player1Id` and `player2Id` fields. This eliminates authorization dependencies on parent or related documents, simplifying security rules and improving performance and scalability.\n\n**QAPs (Rules are not Filters):** The data structure supports secure list operations by segregating data based on ownership. Each user can only access their own games, as determined by the `userId` in the path. This ensures that rules do not act as filters, and list operations are inherently secure."
   }
 }
