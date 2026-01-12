@@ -25,6 +25,7 @@ export type LastMove = {
   piece: string;
   color: 'w' | 'b';
   captured: boolean;
+  sound?: 'move' | 'capture' | 'check' | 'castle' | 'promotion';
 };
 
 export type LastDrawAction = {

@@ -60,7 +60,7 @@ function GamePageContent() {
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
   const lastDrawActionRef = useRef(firestoreGame?.lastDrawAction);
   
-  const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
+  const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal' | 'castle' | 'promotion') => {
     if (typeof window !== 'undefined') {
       try {
         const audio = new Audio(`/sounds/${sound}.mp3`);
@@ -81,10 +81,9 @@ function GamePageContent() {
       const data = snapshot.val();
       if (data) {
         if(data.lastMove) {
-            const newGame = new Chess(data.fen);
-            if(newGame.inCheck()) playSound('check');
-            else if(data.lastMove.captured) playSound('capture');
-            else playSound('move');
+            if(data.lastMove.sound) {
+                playSound(data.lastMove.sound);
+            }
             setLastMove(data.lastMove);
         } else {
             setLastMove(null);

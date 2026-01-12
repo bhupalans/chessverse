@@ -176,7 +176,12 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
                         status: 'completed',
                         winnerId: 'd',
                         reason: 'draw',
-                        drawOffer: null
+                        drawOffer: null,
+                        lastDrawAction: {
+                            type: 'accepted',
+                            by: playerColor,
+                            at: admin.firestore.FieldValue.serverTimestamp()
+                        }
                     });
                 }
                 // If player already offered a draw, do nothing.
@@ -188,6 +193,20 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
                     return gameRef.update({
                         drawOffer: playerColor
                     });
+                }
+            case 'decline-draw':
+                if (gameData.drawOffer === opponentColor) {
+                    return gameRef.update({
+                        drawOffer: null,
+                        lastDrawAction: {
+                            type: 'declined',
+                            by: playerColor,
+                            at: admin.firestore.FieldValue.serverTimestamp()
+                        }
+                    });
+                }
+                else {
+                    throw new functions.https.HttpsError('failed-precondition', 'No draw offer to decline.');
                 }
             case 'abort':
                 // Logic for aborting a game (e.g., if less than 2 moves per side)
