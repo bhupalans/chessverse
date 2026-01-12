@@ -45,15 +45,6 @@ function GamePageContent() {
   const gameRef = useMemoFirebase(() => firestore && gameId ? doc(firestore, 'games', gameId) : null, [firestore, gameId]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
   
-  const whitePlayerId = gameData?.player1Id;
-  const blackPlayerId = gameData?.player2Id;
-
-  const whitePlayerRef = useMemoFirebase(() => firestore && whitePlayerId ? doc(firestore, 'users', whitePlayerId) : null, [firestore, whitePlayerId]);
-  const { data: whitePlayerData } = useDoc<UserType>(whitePlayerRef);
-  
-  const blackPlayerRef = useMemoFirebase(() => firestore && blackPlayerId ? doc(firestore, 'users', blackPlayerId) : null, [firestore, blackPlayerId]);
-  const { data: blackPlayerData } = useDoc<UserType>(blackPlayerRef);
-
   const [localGame, setLocalGame] = useState(() => new Chess());
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
@@ -64,6 +55,15 @@ function GamePageContent() {
   const { toast } = useToast();
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
+
+  const whitePlayerId = gameData?.player1Id;
+  const blackPlayerId = gameData?.player2Id;
+
+  const whitePlayerRef = useMemoFirebase(() => firestore && whitePlayerId ? doc(firestore, 'users', whitePlayerId) : null, [firestore, whitePlayerId]);
+  const { data: whitePlayerData } = useDoc<UserType>(whitePlayerRef);
+  
+  const blackPlayerRef = useMemoFirebase(() => firestore && blackPlayerId ? doc(firestore, 'users', blackPlayerId) : null, [firestore, blackPlayerId]);
+  const { data: blackPlayerData } = useDoc<UserType>(blackPlayerRef);
   
   const playerColor = useMemo<Color>(() => {
     if (!gameData || !user) return 'w';
@@ -126,24 +126,24 @@ function GamePageContent() {
   
   // Effect to sync local chess instance with remote data
   useEffect(() => {
-    if (gameData?.fen) {
+    if (gameData && gameData.fen) {
       const newGame = new Chess(gameData.fen);
       setLocalGame(newGame);
       
       const history = newGame.history({ verbose: true });
       if (history.length > 0) {
         const lastHistoryMove = history[history.length - 1];
-        if (lastHistoryMove.from !== lastMove?.from || lastHistoryMove.to !== lastMove?.to) {
-          setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-          
-          // Determine sound based on the move
-          const currentTurn = localGame.turn(); // Turn before this move
-          if (newGame.turn() !== currentTurn) {
-            if (newGame.inCheck()) playSound('check');
-            else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-            else playSound('move');
-          }
+        setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+        
+        // This sound logic might be a bit noisy on re-renders, but let's keep it simple for now
+        const currentTurn = localGame.turn(); // Turn before this move
+        if (newGame.turn() !== currentTurn) {
+          if (newGame.inCheck()) playSound('check');
+          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+          else playSound('move');
         }
+      } else {
+        setLastMove(null);
       }
     }
     
@@ -158,7 +158,7 @@ function GamePageContent() {
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
       handleGameOver(reason, gameData.winner);
     }
-  }, [gameData, playSound, gameStarted, gameOverState, handleGameOver, lastMove, localGame]);
+  }, [gameData, playSound, gameStarted, gameOverState, handleGameOver, localGame]);
 
 
   const engineGo = useCallback(() => {
@@ -240,7 +240,6 @@ function GamePageContent() {
         if (tempGame.inCheck()) playSound('check');
 
         const newFen = tempGame.fen();
-        setLastMove({ from: result.from, to: result.to });
         
         const updatePayload: Partial<GameType> & DocumentData = {
             fen: newFen,
@@ -274,6 +273,7 @@ function GamePageContent() {
         } else if (isBotGame) {
            const newGame = new Chess(newFen);
            setLocalGame(newGame);
+           setLastMove({ from: result.from, to: result.to });
            if (!tempGame.isGameOver() && engine.current) {
              engine.current.postMessage(`position fen ${newFen}`);
              setTimeout(engineGo, 200);
@@ -371,7 +371,6 @@ function GamePageContent() {
   }
 
   return (
-    <ThemeProvider>
       <div className="flex h-full flex-col items-center justify-center bg-background p-4 lg:p-8">
         <div className="w-full max-w-lg space-y-4">
            {topPlayer && (
@@ -458,16 +457,15 @@ function GamePageContent() {
           </div>
         </div>
       </div>
-    </ThemeProvider>
   );
 }
 
 export default function GamePage() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <GamePageContent />
+      <ThemeProvider>
+        <GamePageContent />
+      </ThemeProvider>
     </Suspense>
   );
 }
-
-    
