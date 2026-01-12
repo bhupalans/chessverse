@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { Chess, type Square as ChessJsSquare, type Color, type Move, type Piece } from 'chess.js';
+import { Chess, type Square as ChessJsSquare, type Color, type Move } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
@@ -42,7 +42,7 @@ function GamePageContent() {
   const firestore = useFirestore();
   const { user } = useUser();
   
-  const gameRef = useMemoFirebase(() => firestore && gameId ? doc(firestore, 'games', gameId) : null, [firestore, gameId]);
+  const gameRef = useMemoFirebase(() => firestore && gameId && !isBotGame ? doc(firestore, 'games', gameId) : null, [firestore, gameId, isBotGame]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
   
   const [localGame, setLocalGame] = useState(() => new Chess());
@@ -66,8 +66,7 @@ function GamePageContent() {
   const { data: blackPlayerData } = useDoc<UserType>(blackPlayerRef);
   
   const playerColor = useMemo<Color>(() => {
-    if (!gameData || !user) return 'w';
-    if (isBotGame) return 'w';
+    if (isBotGame || !gameData || !user) return 'w';
     return gameData.player1Id === user.uid ? 'w' : 'b';
   }, [gameData, user, isBotGame]);
 
@@ -106,7 +105,8 @@ function GamePageContent() {
       const winnerData = winner || (localGame.turn() === 'b' ? 'w' : 'b');
       setWinnerColor(winnerData);
       
-      const tempGame = new Chess(gameData?.fen || localGame.fen());
+      const fen = gameData?.fen || localGame.fen();
+      const tempGame = new Chess(fen);
       findKingPositions(tempGame);
 
       let winnerName = 'draw';
@@ -121,31 +121,32 @@ function GamePageContent() {
               }
           }
       }
-      setGameOverState({ winner: winnerName, reason });
-  }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameData]);
+      if (!gameOverState) {
+        setGameOverState({ winner: winnerName, reason });
+      }
+  }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameData, gameOverState]);
   
   // Effect to sync local chess instance with remote data
   useEffect(() => {
-    if (gameData && gameData.fen) {
-      const currentTurn = localGame.turn();
-      const newGame = new Chess(gameData.fen);
-      
-      // This is now the single source of truth for the board state.
-      setLocalGame(newGame);
+    if (isBotGame || !gameData) return;
 
-      const history = newGame.history({ verbose: true });
-      if (history.length > 0) {
-        const lastHistoryMove = history[history.length - 1];
-        setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-        
-        if (newGame.turn() !== currentTurn) {
-          if (newGame.inCheck()) playSound('check');
-          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-          else playSound('move');
-        }
-      } else {
-        setLastMove(null);
+    const newGame = new Chess(gameData.fen);
+    const oldTurn = localGame.turn();
+
+    setLocalGame(newGame);
+
+    const history = newGame.history({ verbose: true });
+    if (history.length > 0) {
+      const lastHistoryMove = history[history.length - 1];
+      setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+      
+      if (newGame.turn() !== oldTurn) { // Play sound only if turn changed
+        if (newGame.inCheck()) playSound('check');
+        else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+        else playSound('move');
       }
+    } else {
+      setLastMove(null);
     }
     
     if (gameData?.status === 'inprogress' && !gameStarted) {
@@ -157,10 +158,10 @@ function GamePageContent() {
       if (gameData.reason === 'draw') reason = 'Draw by agreement';
       else if(gameData.reason === 'resign') reason = 'Resignation';
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
-      handleGameOver(reason, gameData.winnerId);
+      handleGameOver(reason, gameData.winnerId as 'w' | 'b' | 'd');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameData]);
+  }, [gameData, isBotGame]); // This hook ONLY reacts to gameData changes from the database
 
 
   const engineGo = useCallback(() => {
@@ -181,8 +182,8 @@ function GamePageContent() {
             sf.addEventListener('message', (e: any) => {
               if (e.data?.startsWith('bestmove')) {
                 const bestMove = e.data.split(' ')[1];
-                if (bestMove && localGame.turn() === opponentColor) {
-                  const tempGame = new Chess(localGame.fen());
+                const tempGame = new Chess(localGame.fen());
+                if (bestMove && tempGame.turn() === opponentColor) {
                   const moveResult = tempGame.move(bestMove, { sloppy: true });
 
                   if (moveResult) {
@@ -194,7 +195,7 @@ function GamePageContent() {
 
                     if (tempGame.isGameOver()) {
                       if(tempGame.isCheckmate()){
-                         handleGameOver('Checkmate!');
+                         handleGameOver('Checkmate!', tempGame.turn() === 'w' ? 'b' : 'w');
                       } else if (tempGame.isStalemate()) {
                          handleGameOver('Stalemate', 'd');
                       } else if (tempGame.isDraw()) {
@@ -226,7 +227,7 @@ function GamePageContent() {
     }
   }, [isBotGame, localGame, opponentColor, playSound, handleGameOver]);
 
-  const finalGameOver = useMemo(() => !!gameOverState || gameData?.status === 'completed' || localGame.isGameOver(), [gameOverState, gameData, localGame]);
+  const finalGameOver = useMemo(() => !!gameOverState || localGame.isGameOver(), [gameOverState, localGame]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     const currentTurn = localGame.turn();
@@ -252,25 +253,26 @@ function GamePageContent() {
         if (tempGame.isGameOver()) {
           updatePayload.status = 'completed';
           let reason: GameType['reason'] = 'checkmate';
-          let winner: GameType['winnerId'] = localGame.turn() === 'b' ? 'w' : 'b';
+          let winnerId: GameType['winnerId'] = 'd';
 
           if (tempGame.isCheckmate()) {
             reason = 'checkmate';
-            winner = tempGame.turn() === 'w' ? 'b' : 'w';
+            winnerId = tempGame.turn() === 'w' ? 'b' : 'w';
           } else if (tempGame.isStalemate()){
             reason = 'stalemate';
-            winner = 'd';
+            winnerId = 'd';
           } else if (tempGame.isDraw()) {
             reason = 'draw';
-            winner = 'd';
+            winnerId = 'd';
           }
           
-          updatePayload.winnerId = winner;
+          updatePayload.winnerId = winnerId;
           updatePayload.reason = reason;
-          handleGameOver(reason!, winner);
+          // Let the useEffect handle the gameOver state update from the db
         }
         
         if (!isBotGame && gameRef) {
+          // This update will trigger the useEffect hook for all clients
           updateDocumentNonBlocking(gameRef, updatePayload);
         } else if (isBotGame) {
            const newGame = new Chess(newFen);
@@ -279,6 +281,14 @@ function GamePageContent() {
            if (!tempGame.isGameOver() && engine.current) {
              engine.current.postMessage(`position fen ${newFen}`);
              setTimeout(engineGo, 200);
+           } else if (tempGame.isGameOver()) {
+              if (tempGame.isCheckmate()) {
+                handleGameOver('Checkmate!', playerColor);
+              } else if (tempGame.isStalemate()) {
+                handleGameOver('Stalemate', 'd');
+              } else if (tempGame.isDraw()) {
+                handleGameOver('Draw', 'd');
+              }
            }
         }
         return true;
@@ -305,12 +315,12 @@ function GamePageContent() {
 
   const handleResign = () => {
     if (finalGameOver) return;
-    const winner = opponentColor;
+    const winnerId = opponentColor;
     if (!isBotGame && gameRef) {
-      updateDocumentNonBlocking(gameRef, { status: 'completed', winnerId: winner, reason: 'resign' });
+      updateDocumentNonBlocking(gameRef, { status: 'completed', winnerId: winnerId, reason: 'resign' });
     }
     const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayerData?.username : whitePlayerData?.username) || 'Opponent';
-    handleGameOver(`You have resigned. ${opponentName} wins.`, winner);
+    handleGameOver(`You have resigned. ${opponentName} wins.`, winnerId);
   };
 
   const handleOfferDraw = () => {
