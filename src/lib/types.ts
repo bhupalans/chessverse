@@ -27,6 +27,12 @@ export type LastMove = {
   captured: boolean;
 };
 
+export type LastDrawAction = {
+    type: 'accepted' | 'declined';
+    by: 'w' | 'b';
+    at: any; // Firestore Timestamp
+}
+
 export type Game = {
   id:string;
   player1Id?: string;
@@ -41,6 +47,7 @@ export type Game = {
   lastMove?: LastMove;
   winnerId?: 'w' | 'b' | 'd'; // d for draw
   drawOffer?: 'w' | 'b' | null;
+  lastDrawAction?: LastDrawAction;
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate';
 };
 

@@ -182,7 +182,12 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                         status: 'completed',
                         winnerId: 'd',
                         reason: 'draw',
-                        drawOffer: null
+                        drawOffer: null,
+                        lastDrawAction: {
+                            type: 'accepted',
+                            by: playerColor,
+                            at: admin.firestore.FieldValue.serverTimestamp()
+                        }
                     });
                 } 
                 // If player already offered a draw, do nothing.
@@ -196,6 +201,20 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                     });
                 }
             
+            case 'decline-draw':
+                if (gameData.drawOffer === opponentColor) {
+                    return gameRef.update({
+                        drawOffer: null,
+                        lastDrawAction: {
+                            type: 'declined',
+                            by: playerColor,
+                            at: admin.firestore.FieldValue.serverTimestamp()
+                        }
+                    });
+                } else {
+                    throw new functions.https.HttpsError('failed-precondition', 'No draw offer to decline.');
+                }
+
             case 'abort':
                  // Logic for aborting a game (e.g., if less than 2 moves per side)
                 const liveGameSnapshot = await db.ref(`/liveGames/${gameId}`).once('value');
@@ -221,5 +240,3 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
-
-    

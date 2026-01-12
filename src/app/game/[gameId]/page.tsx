@@ -58,6 +58,7 @@ function GamePageContent() {
   const { toast } = useToast();
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
+  const lastDrawActionRef = useRef(firestoreGame?.lastDrawAction);
   
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
     if (typeof window !== 'undefined') {
@@ -195,6 +196,19 @@ function GamePageContent() {
     }
   }, [firestoreGame, gameStarted]);
 
+  useEffect(() => {
+    const lastDrawAction = firestoreGame?.lastDrawAction;
+    if (lastDrawAction && lastDrawAction.at !== lastDrawActionRef.current?.at) {
+        if (lastDrawAction.type === 'declined' && lastDrawAction.by === opponentColor) {
+            toast({
+                title: 'Draw Offer Declined',
+                description: 'Your opponent has declined the draw offer.',
+            });
+        }
+    }
+    lastDrawActionRef.current = lastDrawAction;
+  }, [firestoreGame?.lastDrawAction, opponentColor, toast]);
+
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -315,7 +329,7 @@ function GamePageContent() {
     }
   };
   
-  const handleGameAction = async (action: 'resign' | 'draw' | 'abort') => {
+  const handleGameAction = async (action: 'resign' | 'draw' | 'abort' | 'decline-draw') => {
     if (finalGameOver || !gameId) return;
 
     try {
@@ -367,11 +381,7 @@ function GamePageContent() {
     if (accept) {
       handleGameAction('draw');
     } else {
-       toast({
-        title: 'Draw Offer Declined',
-        description: 'You have declined the draw offer.',
-      });
-      // Here you would ideally notify the other player, possibly with another cloud function or a db state change
+       handleGameAction('decline-draw');
     }
   };
 
@@ -512,5 +522,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    
