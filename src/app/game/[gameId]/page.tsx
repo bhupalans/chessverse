@@ -45,10 +45,13 @@ function GamePageContent() {
   const gameRef = useMemoFirebase(() => firestore && gameId ? doc(firestore, 'games', gameId) : null, [firestore, gameId]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
 
-  const whitePlayerRef = useMemoFirebase(() => firestore && gameData?.player1Id ? doc(firestore, 'users', gameData.player1Id) : null, [firestore, gameData?.player1Id]);
+  const whitePlayerId = gameData?.player1Id;
+  const blackPlayerId = gameData?.player2Id;
+
+  const whitePlayerRef = useMemoFirebase(() => firestore && whitePlayerId ? doc(firestore, 'users', whitePlayerId) : null, [firestore, whitePlayerId]);
   const { data: whitePlayerData, isLoading: isWhitePlayerLoading } = useDoc<UserType>(whitePlayerRef);
   
-  const blackPlayerRef = useMemoFirebase(() => firestore && gameData?.player2Id ? doc(firestore, 'users', gameData.player2Id) : null, [firestore, gameData?.player2Id]);
+  const blackPlayerRef = useMemoFirebase(() => firestore && blackPlayerId ? doc(firestore, 'users', blackPlayerId) : null, [firestore, blackPlayerId]);
   const { data: blackPlayerData, isLoading: isBlackPlayerLoading } = useDoc<UserType>(blackPlayerRef);
 
   const [localGame, setLocalGame] = useState(() => new Chess());
@@ -134,6 +137,7 @@ function GamePageContent() {
           const lastHistoryMove = history[history.length - 1];
           setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
           if (newGame.inCheck()) playSound('check');
+          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
           else playSound('move');
         }
       }
@@ -343,16 +347,10 @@ function GamePageContent() {
   if (isBotGame) {
     whitePlayer = humanPlayer;
     blackPlayer = botPlayer;
-  } else if (whitePlayerData && blackPlayerData) {
-      whitePlayer = whitePlayerData;
-      blackPlayer = blackPlayerData;
-  } else if (whitePlayerData) {
-    whitePlayer = whitePlayerData;
-    blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   } else {
-     // Placeholder for loading state
-     whitePlayer = { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
-     blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
+    // If player data is still loading, use placeholders.
+    whitePlayer = whitePlayerData ?? { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
+    blackPlayer = blackPlayerData ?? { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   }
 
 
@@ -465,3 +463,5 @@ export default function GamePage() {
   );
 }
 
+
+    
