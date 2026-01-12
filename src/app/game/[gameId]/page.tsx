@@ -184,6 +184,12 @@ function GamePageContent() {
   }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayer, blackPlayer, gameOverState]);
   
   useEffect(() => {
+    if (firestoreGame?.status === 'completed' && !gameOverState) {
+      handleGameOver(firestoreGame.reason || 'Game Over', firestoreGame.winnerId);
+    }
+  }, [firestoreGame, gameOverState, handleGameOver]);
+
+  useEffect(() => {
     if (!gameStarted && firestoreGame?.status === 'inprogress') {
       setGameStarted(true);
     }
@@ -254,7 +260,7 @@ function GamePageContent() {
     }
   }, [isBotGame, game, opponentColor, playSound, handleGameOver]);
 
-  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver(), [gameOverState, game]);
+  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
 
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     if (isBotGame) {
@@ -308,27 +314,65 @@ function GamePageContent() {
       }
     }
   };
+  
+  const handleGameAction = async (action: 'resign' | 'draw' | 'abort') => {
+    if (finalGameOver || !gameId) return;
+
+    try {
+      const functions = getFunctions();
+      const handleAction = httpsCallable(functions, 'handleGameAction');
+      await handleAction({ gameId, action });
+
+      if (action === 'resign') {
+        toast({ title: 'You have resigned.' });
+      } else if (action === 'draw') {
+        const drawOfferedByOpponent = firestoreGame?.drawOffer && firestoreGame.drawOffer !== playerColor;
+        if(drawOfferedByOpponent) {
+             toast({ title: 'Draw accepted!' });
+        } else {
+             toast({ title: 'Draw offer sent.' });
+        }
+      }
+    } catch (error: any) {
+      console.error(`Error with action ${action}:`, error);
+      toast({
+        variant: 'destructive',
+        title: `Action Failed: ${action}`,
+        description: error.message || 'Could not perform the requested action.',
+      });
+    }
+  };
+
 
   const handleResign = () => {
-    if (finalGameOver) return;
-    const winnerId = opponentColor;
-    const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayer?.username : whitePlayer?.username) || 'Opponent';
-    handleGameOver(`You have resigned. ${opponentName} wins.`, winnerId);
+    if (isBotGame) {
+        if (finalGameOver) return;
+        const winnerId = opponentColor;
+        const opponentName = 'Stockfish Bot';
+        handleGameOver(`You have resigned. ${opponentName} wins.`, winnerId);
+    } else {
+       handleGameAction('resign');
+    }
   };
 
   const handleOfferDraw = () => {
-     if (finalGameOver) return;
-     toast({
-        title: 'Draw Offer',
-        description: 'Draw offer functionality is not yet implemented.',
-      });
+     if (isBotGame) {
+        toast({ title: 'Draw Offer', description: 'Cannot offer draw to bot.' });
+     } else {
+        handleGameAction('draw');
+     }
   };
 
   const handleDrawResponse = (accept: boolean) => {
-    toast({
-      title: 'Draw Offer',
-      description: 'Draw offer functionality is not yet implemented.',
-    });
+    if (accept) {
+      handleGameAction('draw');
+    } else {
+       toast({
+        title: 'Draw Offer Declined',
+        description: 'You have declined the draw offer.',
+      });
+      // Here you would ideally notify the other player, possibly with another cloud function or a db state change
+    }
   };
 
   const handleStartGame = () => {
@@ -341,7 +385,7 @@ function GamePageContent() {
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = game.turn();
-  const drawOfferedToMe = false; // Placeholder
+  const drawOfferedToMe = !isBotGame && firestoreGame?.drawOffer === opponentColor;
 
   if (isGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
@@ -468,3 +512,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    

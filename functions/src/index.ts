@@ -1,3 +1,4 @@
+
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { Chess, Move } from 'chess.js';
@@ -5,7 +6,7 @@ import { Chess, Move } from 'chess.js';
 admin.initializeApp();
 
 const db = admin.database();
-//const firestore = admin.firestore();
+const firestore = admin.firestore();
 
 export const submitMove = functions.https.onCall(async (data, context) => {
     // Ensure the user is authenticated
@@ -26,20 +27,26 @@ export const submitMove = functions.https.onCall(async (data, context) => {
     }
 
     const gameRef = db.ref(`/liveGames/${gameId}`);
+    const firestoreGameRef = firestore.collection('games').doc(gameId);
 
     try {
-        const snapshot = await gameRef.once('value');
+        const [snapshot, firestoreGameDoc] = await Promise.all([
+            gameRef.once('value'),
+            firestoreGameRef.get()
+        ]);
+        
         const gameData = snapshot.val();
+        const firestoreGameData = firestoreGameDoc.data();
 
-        if (!gameData) {
+        if (!gameData || !firestoreGameData) {
             throw new functions.https.HttpsError('not-found', 'Game not found.');
         }
+        
+        const playerColor = context.auth.uid === firestoreGameData.player1Id ? 'w' : 'b';
 
         const game = new Chess(gameData.fen);
         
-        // TODO: Add logic to verify that the player making the move is the correct one based on `context.auth.uid`
-
-        if (game.turn() !== gameData.turn) {
+        if (game.turn() !== playerColor) {
              throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
         }
 
@@ -61,6 +68,27 @@ export const submitMove = functions.https.onCall(async (data, context) => {
         };
 
         await gameRef.update({ fen: newFen, turn: newTurn, lastMove });
+        
+        if (game.isGameOver()) {
+            let reason = 'Game Over';
+            let winnerId = newTurn === 'w' ? 'b' : 'w'; // The loser is the one whose turn it would be
+            if(game.isCheckmate()) {
+                reason = 'Checkmate';
+            } else if (game.isStalemate()) {
+                reason = 'Stalemate';
+                winnerId = 'd';
+            } else if (game.isDraw()) {
+                reason = 'Draw';
+                winnerId = 'd';
+            }
+            
+            await firestoreGameRef.update({
+                status: 'completed',
+                winnerId: winnerId,
+                reason: reason,
+                fen: newFen, // Store final FEN
+            });
+        }
 
         return { status: 'success', fen: newFen, turn: newTurn, lastMove };
     } catch (error: any) {
@@ -108,3 +136,90 @@ export const initializeLiveGame = functions.firestore
             turn: 'w'
         });
     });
+
+export const handleGameAction = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
+    }
+
+    const { gameId, action } = data;
+    const uid = context.auth.uid;
+
+    if (!gameId || !action) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing gameId or action.');
+    }
+
+    const gameRef = firestore.collection('games').doc(gameId);
+
+    try {
+        const gameDoc = await gameRef.get();
+        if (!gameDoc.exists) {
+            throw new functions.https.HttpsError('not-found', 'Game not found.');
+        }
+
+        const gameData = gameDoc.data()!;
+        
+        if (gameData.status === 'completed') {
+            throw new functions.https.HttpsError('failed-precondition', 'Game is already completed.');
+        }
+
+        const playerColor = uid === gameData.player1Id ? 'w' : 'b';
+        const opponentColor = playerColor === 'w' ? 'b' : 'w';
+
+        switch (action) {
+            case 'resign':
+                return gameRef.update({
+                    status: 'completed',
+                    winnerId: opponentColor,
+                    reason: 'resign'
+                });
+            
+            case 'draw':
+                const currentDrawOffer = gameData.drawOffer;
+                // If opponent offered a draw, accept it.
+                if (currentDrawOffer === opponentColor) {
+                    return gameRef.update({
+                        status: 'completed',
+                        winnerId: 'd',
+                        reason: 'draw',
+                        drawOffer: null
+                    });
+                } 
+                // If player already offered a draw, do nothing.
+                else if (currentDrawOffer === playerColor) {
+                    throw new functions.https.HttpsError('failed-precondition', 'You have already offered a draw.');
+                }
+                // Otherwise, offer a draw.
+                else {
+                    return gameRef.update({
+                        drawOffer: playerColor
+                    });
+                }
+            
+            case 'abort':
+                 // Logic for aborting a game (e.g., if less than 2 moves per side)
+                const liveGameSnapshot = await db.ref(`/liveGames/${gameId}`).once('value');
+                const liveGame = new Chess(liveGameSnapshot.val()?.fen);
+                
+                if (liveGame.history().length > 4) { // 2 full moves
+                    throw new functions.https.HttpsError('failed-precondition', 'Cannot abort game after several moves.');
+                }
+                return gameRef.update({
+                    status: 'completed',
+                    winnerId: 'd', // Aborted games are a draw
+                    reason: 'abort'
+                });
+
+            default:
+                throw new functions.https.HttpsError('invalid-argument', 'Invalid action.');
+        }
+    } catch (error: any) {
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        console.error('Error handling game action:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred.');
+    }
+});
+
+    

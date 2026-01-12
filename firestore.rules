@@ -1,3 +1,4 @@
+
 /**
  * Core Philosophy: This ruleset enforces a strict user-ownership model for user-specific data,
  * while allowing public read access for shared game data to enable a lobby system.
@@ -5,7 +6,7 @@
  * Data Structure:
  * - `/users/{userId}`: Private data tree for each user, accessible only by the owner.
  * - `/games/{gameId}`: Publicly listable and readable collection for game states.
- *   Write access is restricted to the players involved in the game.
+ *   Write access is restricted to the players involved in the game or to Cloud Functions.
  *
  * Key Security Decisions:
  * - User Listing Disabled: To protect user privacy, listing all users is forbidden.
@@ -15,6 +16,8 @@
  *   populate the game lobby.
  * - Restricted Game Writes: Only the players participating in a game can update its state.
  *   This prevents cheating or griefing by outside users.
+ * - Game Outcome Integrity: Game completion status (`status`, `winnerId`, `reason`) can only
+ *   be set by a server-side process (Cloud Function), preventing clients from declaring victory.
  * - Default Deny: All operations are denied by default unless explicitly permitted.
  */
 rules_version = '2';
@@ -48,6 +51,15 @@ service cloud.firestore {
     function isPlayer(gameResource) {
       return isSignedIn() && (request.auth.uid == gameResource.data.player1Id || request.auth.uid == gameResource.data.player2Id);
     }
+
+    /**
+     * isServer
+     * Checks if the request is coming from a trusted server environment (i.e., a Cloud Function).
+     * This is identified by the absence of a `request.auth` object.
+     */
+    function isServer() {
+      return request.auth == null;
+    }
     
     /**
      * isNewGameValid
@@ -78,6 +90,7 @@ service cloud.firestore {
      * isGameUpdateValid
      * Validates an in-progress game update (e.g., making a move).
      * Ensures immutable fields are not changed if they are part of the request.
+     * Prevents client from changing game outcome fields.
      */
      function isGameUpdateValid() {
         let before = resource.data;
@@ -89,8 +102,27 @@ service cloud.firestore {
           (!('startTime' in after) || before.startTime == after.startTime) &&
           (!('player1' in after) || before.player1 == after.player1);
 
-        return immutableFieldsUnchanged;
+        // Client cannot change these fields directly. Only the server (cloud function) can.
+        let outcomeFieldsUnchanged =
+          (!('status' in after) || after.status == before.status || after.status == 'inprogress') &&
+          !('winnerId' in after) &&
+          !('reason' in after);
+
+        return immutableFieldsUnchanged && outcomeFieldsUnchanged;
      }
+     
+    /**
+     * isServerGameOutcomeUpdate
+     * Allows server (Cloud Function) to update game outcome.
+     */
+    function isServerGameOutcomeUpdate() {
+        let before = resource.data;
+        let after = request.resource.data;
+        return isServer()
+          && after.status == 'completed'
+          && 'winnerId' in after
+          && 'reason' in after;
+    }
 
 
     // ------------------------------------------------------------------------
@@ -111,7 +143,7 @@ service cloud.firestore {
     /**
      * @description Defines access control for game documents. Games are publicly readable
      * to populate the lobby. Creating a game is allowed for any signed-in user.
-     * Updating a game is restricted to the players in that game.
+     * Updating a game is restricted to the players in that game or by server-side functions.
      */
     match /games/{gameId} {
       // Any authenticated user can read or list games for the lobby.
@@ -120,11 +152,15 @@ service cloud.firestore {
       // Any authenticated user can create a valid new game.
       allow create: if isSignedIn() && isNewGameValid();
 
-      // Only players in the game can update it.
-      allow update: if isSignedIn() && isPlayer(resource) && (isGameJoinValid() || isGameUpdateValid());
+      // Updates are allowed if it's a valid player action (joining, offering draw)
+      // OR if it's a server action completing the game.
+      allow update: if (isSignedIn() && isPlayer(resource) && (isGameJoinValid() || isGameUpdateValid()))
+                       || isServerGameOutcomeUpdate();
       
-      // Only a player can delete a game they are in.
+      // Only a player can delete a game they are in (e.g. declining an invite).
       allow delete: if isSignedIn() && isPlayer(resource);
     }
   }
 }
+
+    

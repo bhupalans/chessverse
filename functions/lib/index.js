@@ -67,8 +67,15 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         }
         const newFen = game.fen();
         const newTurn = game.turn();
-        await gameRef.update({ fen: newFen, turn: newTurn });
-        return { status: 'success', fen: newFen, turn: newTurn };
+        const lastMove = {
+            from: move.from,
+            to: move.to,
+            piece: move.piece,
+            color: move.color,
+            captured: move.flags.includes('c'),
+        };
+        await gameRef.update({ fen: newFen, turn: newTurn, lastMove });
+        return { status: 'success', fen: newFen, turn: newTurn, lastMove };
     }
     catch (error) {
         if (error instanceof functions.https.HttpsError) {
