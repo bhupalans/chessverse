@@ -170,7 +170,8 @@ export const initializeLiveGame = functions.firestore
             turn: 'w'
         };
 
-        if (afterData.timeControl) {
+        if (afterData.timeControl && afterData.timeControl.initial) {
+            console.log(`Initializing clocks with ${afterData.timeControl.initial} seconds.`);
             liveGameState.clocks = {
                 white: afterData.timeControl.initial,
                 black: afterData.timeControl.initial,

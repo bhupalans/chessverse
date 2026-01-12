@@ -93,7 +93,25 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             captured: move.flags.includes('c'),
             sound: sound,
         };
-        await gameRef.update({ fen: newFen, turn: newTurn, lastMove });
+        const updates = {
+            fen: newFen,
+            turn: newTurn,
+            lastMove: lastMove
+        };
+        // Clock updates
+        if (gameData.clocks && firestoreGameData.timeControl) {
+            const now = Date.now();
+            const lastTick = gameData.clocks.lastTick;
+            const elapsed = (now - lastTick) / 1000; // in seconds
+            const playerToUpdate = game.turn() === 'w' ? 'black' : 'white';
+            const increment = firestoreGameData.timeControl.increment || 0;
+            let newTime = gameData.clocks[playerToUpdate] - elapsed + increment;
+            if (newTime < 0)
+                newTime = 0;
+            updates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
+            updates[`clocks/${playerToUpdate}`] = newTime;
+        }
+        await gameRef.update(updates);
         if (game.isGameOver()) {
             let reason = 'Game Over';
             let winnerId = newTurn === 'w' ? 'b' : 'w'; // The loser is the one whose turn it would be
@@ -147,11 +165,19 @@ exports.initializeLiveGame = functions.firestore
         return null;
     }
     const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-    console.log(`Initializing live game at /liveGames/${gameId}`);
-    return liveGameRef.set({
+    const liveGameState = {
         fen: startingFen,
         turn: 'w'
-    });
+    };
+    if (afterData.timeControl) {
+        liveGameState.clocks = {
+            white: afterData.timeControl.initial,
+            black: afterData.timeControl.initial,
+            lastTick: admin.database.ServerValue.TIMESTAMP
+        };
+    }
+    console.log(`Initializing live game at /liveGames/${gameId}`);
+    return liveGameRef.set(liveGameState);
 });
 exports.handleGameAction = functions.https.onCall(async (data, context) => {
     var _a;
