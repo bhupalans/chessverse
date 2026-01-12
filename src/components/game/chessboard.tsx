@@ -1,180 +1,51 @@
 'use client';
-import { useState, useMemo, useContext } from 'react';
+import { useContext } from 'react';
 import { cn } from '@/lib/utils';
-import { type Square as ChessJsSquare, type Color } from 'chess.js';
-import { useToast } from '@/hooks/use-toast';
+import { type Color } from 'chess.js';
 import { ThemeContext } from '@/context/theme-context';
-import { Chess as ChessGame } from 'chess.js';
-import { Crown, Flag } from 'lucide-react';
-import Image from 'next/image';
-
-const pieceSet = 'alpha'; // This is now fixed as per the new constraints
 
 export function Chessboard({
-  fen,
-  onMove,
-  gameStarted,
-  isEngineLoading,
   playerColor,
-  isGameOver,
-  turn,
-  winner,
-  kingPositions,
-  lastMove,
+  children,
 }: {
-  fen: string;
-  onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
-  gameStarted: boolean;
-  isEngineLoading: boolean;
   playerColor: Color;
-  isGameOver: boolean;
-  turn: Color;
-  winner: 'w' | 'b' | 'd' | null;
-  kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
-  lastMove: { from: ChessJsSquare, to: ChessJsSquare } | null;
+  children: React.ReactNode;
 }) {
   const { theme } = useContext(ThemeContext);
-  const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
-  const { toast } = useToast();
-
-  const game = useMemo(() => new ChessGame(fen), [fen]);
-  const board = useMemo(() => game.board(), [game]);
-  
-  const handleSquareClick = (row: number, col: number) => {
-    if (!gameStarted && !isGameOver) {
-      toast({
-        title: 'Game Not Started',
-        description: 'The game will begin when both players are ready.',
-      });
-      return;
-    }
-    
-    let square: ChessJsSquare;
-    if (playerColor === 'w') {
-      square = String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row) as ChessJsSquare;
-    } else {
-      square = String.fromCharCode('a'.charCodeAt(0) + (7 - col)) + (row + 1) as ChessJsSquare;
-    }
-
-
-    if (isGameOver) {
-        toast({ title: 'Game Over' });
-        return;
-    }
-    
-    if (isEngineLoading) {
-      toast({ title: 'Please wait', description: 'Chess engine is loading...' });
-      return;
-    }
-
-    if(turn !== playerColor){
-        toast({ title: "Not your turn", description: "Please wait for your opponent to move."});
-        return;
-    }
-
-    if (selectedSquare) {
-       const moveSuccessful = onMove({
-        from: selectedSquare,
-        to: square,
-        promotion: 'q', // Always promote to queen for simplicity
-      });
-      // Deselect square whether move was successful or not
-      setSelectedSquare(null);
-    } else {
-      const piece = game.get(square);
-      if (piece && piece.color === turn && piece.color === playerColor) {
-        setSelectedSquare(square);
-      } else if (piece && piece.color !== playerColor) {
-        toast({ title: "Wait for your turn", description: "You can't move your opponent's pieces." });
-      }
-    }
-  };
-  
-  const validMovesForSelectedPiece = useMemo(() => {
-    if (!selectedSquare) return new Set();
-    const moves = game.moves({ square: selectedSquare, verbose: true });
-    return new Set(moves.map(move => move.to));
-  }, [selectedSquare, game]);
-
-  const boardToRender = playerColor === 'w' ? board : board.slice().reverse().map(row => row.slice().reverse());
 
   const ranks = playerColor === 'w' ? ['8', '7', '6', '5', '4', '3', '2', '1'] : ['1', '2', '3', '4', '5', '6', '7', '8'];
   const files = playerColor === 'w' ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
 
+  const squares = [];
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      const isLightSquare = (i + j) % 2 !== 0;
+      squares.push(
+        <div
+          key={`${i}-${j}`}
+          className={cn(
+            'flex items-center justify-center',
+            isLightSquare ? theme.lightSquare : theme.darkSquare
+          )}
+        />
+      );
+    }
+  }
+
   return (
-    <div className={cn(
-      "grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] aspect-square w-full max-w-lg rounded-lg overflow-hidden shadow-2xl",
-    )}>
+    <div className="grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] aspect-square w-full max-w-lg rounded-lg overflow-hidden shadow-2xl">
       <div className="flex flex-col text-xs font-bold text-muted-foreground pr-1">
         {ranks.map((rank) => (
           <div key={rank} className="flex-1 flex items-center justify-center">{rank}</div>
         ))}
       </div>
       
-      <div className={cn("grid grid-cols-8 grid-rows-8", (isGameOver || !gameStarted) && "opacity-70")}>
-        {boardToRender.map((row, rowIndex) =>
-          row.map((piece, colIndex) => {
-            let squareName: ChessJsSquare;
-            if (playerColor === 'w') {
-              squareName = String.fromCharCode('a'.charCodeAt(0) + colIndex) + (8 - rowIndex) as ChessJsSquare;
-            } else {
-              squareName = String.fromCharCode('a'.charCodeAt(0) + (7-colIndex)) + (rowIndex + 1) as ChessJsSquare;
-            }
-            
-            const pieceOnSquare = piece;
-
-            const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
-            const isSelected = selectedSquare === squareName;
-            const isPossibleMove = validMovesForSelectedPiece.has(squareName);
-            const isLastMove = lastMove && (lastMove.from === squareName || lastMove.to === squareName);
-
-            const isWinningKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && pieceOnSquare?.type === 'k' && pieceOnSquare?.color === winner;
-            const isLosingKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && pieceOnSquare?.type === 'k' && pieceOnSquare?.color !== winner;
-
-
-            return (
-              <div
-                key={`${rowIndex}-${colIndex}`}
-                className={cn(
-                  'flex items-center justify-center',
-                  isLightSquare ? theme.lightSquare : theme.darkSquare
-                )}
-                onClick={() => handleSquareClick(rowIndex, colIndex)}
-              >
-                <div
-                  className={cn(
-                    'relative flex h-full w-full items-center justify-center transition-colors',
-                    (gameStarted && !isGameOver) && 'cursor-pointer',
-                    isSelected && 'bg-yellow-500/50',
-                    isLastMove && 'bg-yellow-400/40'
-                  )}
-                >
-                  {pieceOnSquare && (
-                     <Image 
-                        src={`/pieces/${pieceSet}/${pieceOnSquare.color}${pieceOnSquare.type.toUpperCase()}.svg`} 
-                        alt={`${pieceOnSquare.color === 'w' ? 'White' : 'Black'} ${pieceOnSquare.type}`}
-                        width={45}
-                        height={45}
-                        className="w-full h-full"
-                        unoptimized
-                     />
-                  )}
-                  {isPossibleMove && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
-                    </div>
-                  )}
-                  {isWinningKingSquare && (
-                    <Crown className="absolute w-6 h-6 text-green-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ top: '-4px', left: '50%', transform: 'translateX(-50%)'}}/>
-                  )}
-                  {isLosingKingSquare && (
-                    <Flag className="absolute w-5 h-5 text-red-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ top: '-2px', left: '50%', transform: 'translateX(-50%)'}}/>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
+      <div className="relative">
+        <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
+            {squares}
+        </div>
+        {/* Pieces will be rendered here as children */}
+        {children}
       </div>
 
       <div />

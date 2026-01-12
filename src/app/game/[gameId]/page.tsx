@@ -15,15 +15,9 @@ import { ThemeSelector } from '@/components/game/theme-selector';
 import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
 import type { Game as GameType, User as UserType } from '@/lib/types';
 import { doc, type DocumentData } from 'firebase/firestore';
+import { Chessboard } from '@/components/game/chessboard';
+import { ChessPieces } from '@/components/game/chess-pieces';
 
-
-const Chessboard = dynamic(
-  () => import('@/components/game/chessboard').then((mod) => mod.Chessboard),
-  {
-    ssr: false,
-    loading: () => <div className="w-full max-w-lg aspect-square bg-muted/50 rounded-lg flex items-center justify-center">Loading Board...</div>
-  }
-);
 
 declare global {
   interface Window {
@@ -72,16 +66,17 @@ function GamePageContent() {
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
   
+  const gameFen = isBotGame ? botGameFen : gameData?.fen;
+  
   const game = useMemo(() => {
-    const fen = isBotGame ? botGameFen : gameData?.fen;
-    if (!fen) return new Chess();
+    if (!gameFen) return new Chess();
     try {
-      return new Chess(fen);
+      return new Chess(gameFen);
     } catch (e) {
-      console.error("Invalid FEN string:", fen);
+      console.error("Invalid FEN string:", gameFen);
       return new Chess();
     }
-  }, [isBotGame, botGameFen, gameData?.fen]);
+  }, [gameFen]);
 
   // Sound playing utility
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
@@ -144,7 +139,6 @@ function GamePageContent() {
     
     if (history.length > 0) {
       const lastHistoryMove = history[history.length - 1];
-      // Only play sound if the move is new by comparing SAN notation
       const oldHistory = game.history();
       if (oldHistory.length < history.length) {
           if (newGame.inCheck()) playSound('check');
@@ -240,7 +234,6 @@ function GamePageContent() {
     const currentTurn = game.turn();
     if (finalGameOver || currentTurn !== playerColor) return false;
 
-    // Create a temporary game state to validate the move
     const tempGame = new Chess(game.fen());
     const result = tempGame.move(move);
 
@@ -254,7 +247,6 @@ function GamePageContent() {
       return false;
     }
 
-    // If the move is valid, play sounds and update the database
     if (result.flags.includes('c')) playSound('capture');
     else playSound('move');
     if (tempGame.inCheck()) playSound('check');
@@ -273,7 +265,6 @@ function GamePageContent() {
         else if (tempGame.isDraw()) handleGameOver('Draw', 'd');
       }
     } else if (gameRef) {
-      // For online games, just update the database. The useEffect will handle the local state update.
       const updatePayload: Partial<GameType> & DocumentData = {
         fen: newFen,
         turn: tempGame.turn(),
@@ -365,7 +356,7 @@ function GamePageContent() {
   const currentTurn = game.turn();
   const drawOfferedToMe = gameData?.drawOffer === opponentColor;
 
-  if (isGameLoading || arePlayersLoading) {
+  if (isGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
    if (!gameData && !isBotGame) {
@@ -386,18 +377,20 @@ function GamePageContent() {
             />
           )}
           <div className="relative">
-            <Chessboard 
-              fen={game.fen()}
-              onMove={makeMove}
-              gameStarted={gameStarted}
-              isEngineLoading={isEngineLoading}
-              playerColor={playerColor}
-              isGameOver={finalGameOver}
-              turn={currentTurn}
-              winner={winnerColor}
-              kingPositions={kingPositions}
-              lastMove={lastMove}
-            />
+            <Chessboard playerColor={playerColor}>
+                <ChessPieces
+                    fen={gameFen}
+                    onMove={makeMove}
+                    playerColor={playerColor}
+                    isGameOver={finalGameOver}
+                    turn={currentTurn}
+                    gameStarted={gameStarted}
+                    isEngineLoading={isEngineLoading}
+                    winner={winnerColor}
+                    kingPositions={kingPositions}
+                    lastMove={lastMove}
+                />
+            </Chessboard>
             {gameOverState && (
                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
                 <div className="text-center text-white p-8 rounded-lg">
@@ -419,6 +412,18 @@ function GamePageContent() {
                 </div>
               </div>
             )}
+             {!gameStarted && !isEngineLoading && isBotGame && (
+                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                     <Button onClick={handleStartGame} size="lg">
+                         <Play className="mr-2 h-5 w-5" /> Play vs Bot
+                     </Button>
+                 </div>
+             )}
+             {isEngineLoading && isBotGame && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                    <div className="text-white text-lg">Loading Engine...</div>
+                </div>
+             )}
           </div>
           {bottomPlayer && (
              <PlayerCard 
@@ -444,13 +449,10 @@ function GamePageContent() {
                     {gameData?.drawOffer === playerColor ? 'Offered' : 'Offer Draw'}
                   </Button>
                 </>
-              ) : isBotGame ? (
-                <Button onClick={handleStartGame} className="col-span-2" disabled={isEngineLoading}>
-                  <Play className="mr-2 h-4 w-4" /> 
-                  {isEngineLoading ? 'Loading Engine...' : 'Play vs Bot'}
-                </Button>
-              ) : (
+              ) : !isBotGame ? (
                  <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
+              ) : (
+                <div className="col-span-2 text-center text-muted-foreground">Ready to play vs Bot</div>
               )}
             </div>
              <div className="ml-2">
@@ -464,12 +466,10 @@ function GamePageContent() {
 
 export default function GamePage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div className="flex h-full items-center justify-center">Loading...</div>}>
       <ThemeProvider>
         <GamePageContent />
       </ThemeProvider>
     </Suspense>
   );
 }
-
-    
