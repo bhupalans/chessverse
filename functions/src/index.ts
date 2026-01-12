@@ -92,7 +92,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             const elapsed = (now - lastTick) / 1000; // in seconds
             
             const playerToUpdate = game.turn() === 'w' ? 'black' : 'white';
-            const increment = firestoreGameData.timeControl.increment || 0;
+            const increment = Math.floor((firestoreGameData.timeControl.increment || 0) / 1000);
             
             let newTime = gameData.clocks[playerToUpdate] - elapsed + increment;
             if (newTime < 0) newTime = 0;
@@ -159,11 +159,14 @@ export const initializeLiveGame = functions.firestore
         const liveGameRef = db.ref(`liveGames/${gameId}`);
         const snapshot = await liveGameRef.once('value');
 
-        // Only create if it doesn't already exist to prevent overwriting ongoing games
-        if (snapshot.exists()) {
-            console.log(`Live game at /liveGames/${gameId} already exists. Skipping initialization.`);
+        const existing = snapshot.val();
+        
+        // Only skip if clocks already exist
+        if (existing && existing.clocks) {
+            console.log(`Game ${gameId} already has clocks. Skipping.`);
             return null;
         }
+        
         
         const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
         
@@ -175,19 +178,26 @@ export const initializeLiveGame = functions.firestore
         // Initialize clocks if time control is set
         const timeControl = afterData.timeControl;
         console.log(`timeControl for game ${gameId}:`, timeControl);
+if (timeControl && typeof timeControl.initial === 'number') {
+    const initialSeconds = Math.floor(timeControl.initial / 1000);
+    const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
 
-        if (timeControl && timeControl.initial) {
-            liveGameState.clocks = {
-                white: timeControl.initial,
-                black: timeControl.initial,
-                running: 'w',
-                lastTick: admin.database.ServerValue.TIMESTAMP
-            };
-            console.log(`Clocks initialized for game ${gameId} with ${timeControl.initial} seconds.`);
-        }
+    liveGameState.clocks = {
+        white: initialSeconds,
+        black: initialSeconds,
+        running: 'w',
+        lastTick: admin.database.ServerValue.TIMESTAMP,
+        increment: incrementSeconds
+    };
+
+    console.log(
+      `Clocks initialized for game ${gameId}: ${initialSeconds}s + ${incrementSeconds}s`
+    );
+}
+
 
         console.log(`Initializing live game at /liveGames/${gameId}`);
-        await liveGameRef.set(liveGameState);
+        await liveGameRef.update(liveGameState);
         console.log(`Clocks written for game ${gameId}`);
         return null;
     });
