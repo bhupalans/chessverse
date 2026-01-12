@@ -1,11 +1,14 @@
 'use client';
 import { useState, useMemo, useContext } from 'react';
 import { cn } from '@/lib/utils';
-import { type Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
+import { type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeContext } from '@/context/theme-context';
 import { Chess as ChessGame } from 'chess.js';
 import { Crown, Flag } from 'lucide-react';
+import Image from 'next/image';
+
+const pieceSet = 'alpha'; // This is now fixed as per the new constraints
 
 export function Chessboard({
   fen,
@@ -30,8 +33,7 @@ export function Chessboard({
   kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
   lastMove: { from: ChessJsSquare, to: ChessJsSquare } | null;
 }) {
-  const { theme, pieceSet } = useContext(ThemeContext);
-  const PieceComponent = pieceSet.component;
+  const { theme } = useContext(ThemeContext);
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
   const { toast } = useToast();
 
@@ -147,7 +149,16 @@ export function Chessboard({
                     isLastMove && 'bg-yellow-400/40'
                   )}
                 >
-                  {pieceOnSquare && <PieceComponent type={pieceOnSquare.type} color={pieceOnSquare.color} />}
+                  {pieceOnSquare && (
+                     <Image 
+                        src={`/pieces/${pieceSet}/${pieceOnSquare.color}${pieceOnSquare.type.toUpperCase()}.svg`} 
+                        alt={`${pieceOnSquare.color === 'w' ? 'White' : 'Black'} ${pieceOnSquare.type}`}
+                        width={45}
+                        height={45}
+                        className="w-full h-full"
+                        unoptimized
+                     />
+                  )}
                   {isPossibleMove && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
@@ -175,6 +186,3 @@ export function Chessboard({
     </div>
   );
 }
-
-    
-    

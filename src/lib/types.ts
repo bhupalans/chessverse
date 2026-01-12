@@ -1,6 +1,4 @@
 
-import type { FunctionComponent } from "react";
-
 export type Player = {
   id: string;
   username: string;
@@ -19,7 +17,7 @@ export type User = {
 export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';
 
 export type Game = {
-  id: string;
+  id:string;
   player1Id?: string;
   player2Id?: string;
   player1?: Player;
@@ -41,26 +39,3 @@ export type HistoryGame = {
   date: string;
   eloChange: string;
 };
-
-export type PieceType = 'p' | 'r' | 'n' | 'b' | 'q' | 'k';
-export type PieceColor = 'w' | 'b';
-export type Square = {
-  row: number;
-  col: number;
-};
-export type Piece = {
-  type: PieceType;
-  color: PieceColor;
-  square: Square;
-};
-export type ChessBoardState = (Piece | null)[][];
-
-export interface ChessPieceProps {
-  type: PieceType;
-  color: PieceColor;
-  className?: string;
-}
-
-export type PieceComponent = FunctionComponent<ChessPieceProps>;
-
-    
