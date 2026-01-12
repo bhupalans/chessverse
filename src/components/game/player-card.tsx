@@ -37,7 +37,12 @@ export const PlayerCard = ({
   drawOffered?: boolean;
   onDrawResponse?: (accept: boolean) => void;
 }) => {
-  const formattedTime = useMemo(() => formatTime(time), [time]);
+  //const formattedTime = useMemo(() => formatTime(time), [time]);
+  const formattedTime = useMemo(() => {
+    if (typeof time !== 'number') return '00:00';
+    return formatTime(Math.floor(time / 1000));   // ← convert ms → seconds
+  }, [time]);
+  
 
   return (
     <div className={cn("flex items-center justify-between p-3 rounded-lg bg-card text-card-foreground", isTurn && "bg-primary/10")}>

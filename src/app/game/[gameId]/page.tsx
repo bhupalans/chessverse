@@ -131,37 +131,32 @@ function GamePageContent() {
   }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
 
   // Clock ticking effect
-  useEffect(() => {
-    if (!liveGameState?.clocks || !gameStarted || finalGameOver) {
-      return;
-    }
+useEffect(() => {
+  if (!liveGameState?.clocks) return;
 
-    const interval = setInterval(() => {
-      const { clocks } = liveGameState;
-      if (clocks.running !== game.turn()) {
-        return;
-      }
-      
-      const now = Date.now();
-      const lastTick = clocks.lastTick;
-      const elapsed = (now - lastTick) / 1000; // in seconds
+  const tick = () => {
+    const now = Date.now();
+    const { white, black, lastTick, running } = liveGameState.clocks;
 
-      const whoseTurn = clocks.running === 'w' ? 'white' : 'black';
-      let newTime = clocks[whoseTurn] - elapsed;
-      if (newTime < 0) newTime = 0;
-      
-      setDisplayClocks(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          [whoseTurn]: newTime
-        }
+    if (running === 'w') {
+      setDisplayClocks({
+        white: Math.max(0, white - (now - lastTick)),
+        black,
       });
-    }, 250);
+    } else if (running === 'b') {
+      setDisplayClocks({
+        white,
+        black: Math.max(0, black - (now - lastTick)),
+      });
+    } else {
+      setDisplayClocks({ white, black });
+    }
+  };
 
-    return () => clearInterval(interval);
-  }, [liveGameState, gameStarted, finalGameOver, game]);
-
+  tick();
+  const id = setInterval(tick, 250);
+  return () => clearInterval(id);
+}, [liveGameState?.clocks]);
 
   const playerColor = useMemo<Color>(() => {
     if (isBotGame || !user || !firestoreGame) return 'w';
