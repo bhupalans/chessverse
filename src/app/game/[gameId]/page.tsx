@@ -127,23 +127,26 @@ function GamePageContent() {
   // Effect to sync local chess instance with remote data
   useEffect(() => {
     if (gameData && gameData.fen) {
+      const currentTurn = localGame.turn();
       const newGame = new Chess(gameData.fen);
-      setLocalGame(newGame);
       
-      const history = newGame.history({ verbose: true });
-      if (history.length > 0) {
-        const lastHistoryMove = history[history.length - 1];
-        setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-        
-        // This sound logic might be a bit noisy on re-renders, but let's keep it simple for now
-        const currentTurn = localGame.turn(); // Turn before this move
-        if (newGame.turn() !== currentTurn) {
-          if (newGame.inCheck()) playSound('check');
-          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-          else playSound('move');
+      // Check if the FEN from Firestore is different from the local one
+      if (gameData.fen !== localGame.fen()) {
+        setLocalGame(newGame);
+
+        const history = newGame.history({ verbose: true });
+        if (history.length > 0) {
+          const lastHistoryMove = history[history.length - 1];
+          setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+          
+          if (newGame.turn() !== currentTurn) {
+            if (newGame.inCheck()) playSound('check');
+            else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+            else playSound('move');
+          }
+        } else {
+          setLastMove(null);
         }
-      } else {
-        setLastMove(null);
       }
     }
     
@@ -158,7 +161,7 @@ function GamePageContent() {
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
       handleGameOver(reason, gameData.winner);
     }
-  }, [gameData, playSound, gameStarted, gameOverState, handleGameOver, localGame]);
+  }, [gameData, playSound, gameStarted, gameOverState, handleGameOver]);
 
 
   const engineGo = useCallback(() => {
