@@ -61,6 +61,20 @@ function GamePageContent() {
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
   const lastDrawActionRef = useRef(firestoreGame?.lastDrawAction);
   
+  const gameFen = isBotGame ? botGameFen : liveGameState?.fen;
+  
+  const game = useMemo(() => {
+    if (!gameFen) return new Chess();
+    try {
+      return new Chess(gameFen);
+    } catch (e) {
+      console.error("Invalid FEN string:", gameFen);
+      return new Chess();
+    }
+  }, [gameFen]);
+
+  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
+
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal' | 'castle' | 'promotion') => {
     if (typeof window !== 'undefined') {
       try {
@@ -146,7 +160,7 @@ function GamePageContent() {
     }, 250);
 
     return () => clearInterval(interval);
-  }, [liveGameState, gameStarted, finalGameOver]);
+  }, [liveGameState, gameStarted, finalGameOver, game]);
 
 
   const playerColor = useMemo<Color>(() => {
@@ -155,18 +169,6 @@ function GamePageContent() {
   }, [user, firestoreGame, isBotGame]);
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
-  
-  const gameFen = isBotGame ? botGameFen : liveGameState?.fen;
-  
-  const game = useMemo(() => {
-    if (!gameFen) return new Chess();
-    try {
-      return new Chess(gameFen);
-    } catch (e) {
-      console.error("Invalid FEN string:", gameFen);
-      return new Chess();
-    }
-  }, [gameFen]);
   
   const findKingPositions = useCallback((gameInstance: Chess) => {
     let w: ChessJsSquare | null = null;
@@ -309,8 +311,6 @@ function GamePageContent() {
       };
     }
   }, [isBotGame, game, opponentColor, playSound, handleGameOver]);
-
-  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
 
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
     if (isBotGame) {
@@ -564,5 +564,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    
