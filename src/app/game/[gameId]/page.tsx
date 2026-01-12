@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import type { User as UserType, Game as GameType } from '@/lib/types';
+import type { User as UserType, Game as GameType, LastMove } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
 import { ref, onValue } from 'firebase/database';
@@ -38,7 +38,7 @@ function GamePageContent() {
   const firestore = useFirestore();
   const { user } = useUser();
   
-  const [liveGameState, setLiveGameState] = useState<{fen: string; turn: string} | null>(null);
+  const [liveGameState, setLiveGameState] = useState<{fen: string; turn: string; lastMove?: LastMove} | null>(null);
   const [isGameLoading, setIsGameLoading] = useState(!isBotGame);
 
   const gameDocRef = useMemoFirebase(() => {
@@ -53,12 +53,23 @@ function GamePageContent() {
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
   const [kingPositions, setKingPositions] = useState<{ w: ChessJsSquare, b: ChessJsSquare } | null>(null);
-  const [lastMove, setLastMove] = useState<{ from: ChessJsSquare; to: ChessJsSquare } | null>(null);
+  const [lastMove, setLastMove] = useState<LastMove | null>(null);
   
   const { toast } = useToast();
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
   
+  const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
+    if (typeof window !== 'undefined') {
+      try {
+        const audio = new Audio(`/sounds/${sound}.mp3`);
+        audio.play().catch(e => console.error(`Failed to play ${sound}.mp3`, e));
+      } catch (e) {
+        console.error("Could not play sound", e)
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (isBotGame || !realtimeDB || !gameId) return;
 
@@ -68,9 +79,17 @@ function GamePageContent() {
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
+        if(data.lastMove) {
+            const newGame = new Chess(data.fen);
+            if(newGame.inCheck()) playSound('check');
+            else if(data.lastMove.captured) playSound('capture');
+            else playSound('move');
+            setLastMove(data.lastMove);
+        } else {
+            setLastMove(null);
+        }
         setLiveGameState(data);
       } else if (!isFirestoreGameLoading && firestoreGame?.status !== 'inprogress') {
-         // It might be a new game that hasn't been initialized in RTDB yet.
          setLiveGameState({ fen: new Chess().fen(), turn: 'w'});
       } else {
         toast({
@@ -91,7 +110,7 @@ function GamePageContent() {
     });
 
     return () => unsubscribe();
-  }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading]);
+  }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
 
   const playerColor = useMemo<Color>(() => {
     if (isBotGame || !user || !firestoreGame) return 'w';
@@ -111,17 +130,6 @@ function GamePageContent() {
       return new Chess();
     }
   }, [gameFen]);
-
-  const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
-    if (typeof window !== 'undefined') {
-      try {
-        const audio = new Audio(`/sounds/${sound}.mp3`);
-        audio.play().catch(e => console.error(`Failed to play ${sound}.mp3`, e));
-      } catch (e) {
-        console.error("Could not play sound", e)
-      }
-    }
-  }, []);
   
   const findKingPositions = useCallback((gameInstance: Chess) => {
     let w: ChessJsSquare | null = null;
@@ -176,30 +184,10 @@ function GamePageContent() {
   }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayer, blackPlayer, gameOverState]);
   
   useEffect(() => {
-    if (isBotGame || !liveGameState) return;
-
-    const newGame = new Chess(liveGameState.fen);
-    const history = newGame.history({ verbose: true });
-    
-    if (history.length > 0) {
-      const lastHistoryMove = history[history.length - 1];
-      const oldHistory = game.history();
-      if (oldHistory.length < history.length) {
-          if (newGame.inCheck()) playSound('check');
-          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-          else playSound('move');
-      }
-      setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-    } else {
-      setLastMove(null);
-    }
-    
     if (!gameStarted && firestoreGame?.status === 'inprogress') {
       setGameStarted(true);
     }
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveGameState, isBotGame, firestoreGame]);
+  }, [firestoreGame, gameStarted]);
 
 
   const engineGo = useCallback(() => {
@@ -225,10 +213,11 @@ function GamePageContent() {
                   const moveResult = tempGame.move(bestMove, { sloppy: true });
 
                   if (moveResult) {
-                    if (moveResult.flags.includes('c')) playSound('capture');
-                    else playSound('move');
                     if (tempGame.inCheck()) playSound('check');
-                    setLastMove({ from: moveResult.from, to: moveResult.to });
+                    else if (moveResult.flags.includes('c')) playSound('capture');
+                    else playSound('move');
+                    
+                    setLastMove({ from: moveResult.from, to: moveResult.to, piece: moveResult.piece, color: moveResult.color, captured: moveResult.flags.includes('c') });
                     setBotGameFen(tempGame.fen());
 
                     if (tempGame.isGameOver()) {
@@ -274,11 +263,11 @@ function GamePageContent() {
       const moveResult = tempGame.move(move);
 
       if (moveResult) {
-        if (moveResult.flags.includes('c')) playSound('capture');
-        else playSound('move');
         if (tempGame.inCheck()) playSound('check');
+        else if (moveResult.flags.includes('c')) playSound('capture');
+        else playSound('move');
         
-        setLastMove({ from: moveResult.from, to: moveResult.to });
+        setLastMove({ from: moveResult.from, to: moveResult.to, piece: moveResult.piece, color: moveResult.color, captured: moveResult.flags.includes('c') });
         setBotGameFen(tempGame.fen());
         
         if (tempGame.isGameOver()) {
@@ -479,5 +468,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    

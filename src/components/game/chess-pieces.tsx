@@ -1,13 +1,21 @@
 
 'use client';
 import { useState, useMemo } from 'react';
-import { Chess, type Square as ChessJsSquare, type Color, type Piece } from 'chess.js';
+import { Chess, type Square as ChessJsSquare, type Color, type Piece, type PieceSymbol } from 'chess.js';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Crown, Flag } from 'lucide-react';
 
 const pieceSet = 'alpha';
+
+export interface LastMoveInfo {
+  from: ChessJsSquare;
+  to: ChessJsSquare;
+  piece: PieceSymbol;
+  color: Color;
+  captured: boolean;
+}
 
 export function ChessPieces({
   fen,
@@ -30,7 +38,7 @@ export function ChessPieces({
   isEngineLoading: boolean;
   winner: 'w' | 'b' | 'd' | null;
   kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
-  lastMove: { from: ChessJsSquare, to: ChessJsSquare } | null;
+  lastMove: LastMoveInfo | null;
 }) {
   const { toast } = useToast();
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
@@ -91,17 +99,11 @@ export function ChessPieces({
     const square = getSquareFromEvent(e);
 
     if (selectedSquare) {
-      const isMoveSuccessful = onMove({
+      onMove({
         from: selectedSquare,
         to: square,
         promotion: 'q', // Always promote to queen for simplicity
       });
-      
-      // Only clear selection if the move was successful or it was an attempt to move
-      // If the click was on an empty square or opponent piece, the parent (onMove) handles it
-      // if (!isMoveSuccessful) {
-        // Maybe provide feedback about invalid move
-      // }
       setSelectedSquare(null);
 
     } else {

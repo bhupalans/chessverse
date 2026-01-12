@@ -1,6 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { Chess } from 'chess.js';
+import { Chess, Move } from 'chess.js';
 
 admin.initializeApp();
 
@@ -43,7 +43,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
              throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
         }
 
-        const move = game.move({ from, to, promotion });
+        const move: Move | null = game.move({ from, to, promotion });
 
         if (move === null) {
             throw new functions.https.HttpsError('invalid-argument', 'Illegal move.');
@@ -52,9 +52,17 @@ export const submitMove = functions.https.onCall(async (data, context) => {
         const newFen = game.fen();
         const newTurn = game.turn();
 
-        await gameRef.update({ fen: newFen, turn: newTurn });
+        const lastMove = {
+            from: move.from,
+            to: move.to,
+            piece: move.piece,
+            color: move.color,
+            captured: move.flags.includes('c'),
+        };
 
-        return { status: 'success', fen: newFen, turn: newTurn };
+        await gameRef.update({ fen: newFen, turn: newTurn, lastMove });
+
+        return { status: 'success', fen: newFen, turn: newTurn, lastMove };
     } catch (error: any) {
         if (error instanceof functions.https.HttpsError) {
             throw error;

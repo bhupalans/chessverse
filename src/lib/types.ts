@@ -19,6 +19,14 @@ export type User = {
 
 export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';
 
+export type LastMove = {
+  from: string;
+  to: string;
+  piece: string;
+  color: 'w' | 'b';
+  captured: boolean;
+};
+
 export type Game = {
   id:string;
   player1Id?: string;
@@ -30,6 +38,7 @@ export type Game = {
   fen: string;
   turn: 'w' | 'b';
   moves: string[];
+  lastMove?: LastMove;
   winnerId?: 'w' | 'b' | 'd'; // d for draw
   drawOffer?: 'w' | 'b' | null;
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate';
