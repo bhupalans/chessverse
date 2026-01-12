@@ -96,6 +96,20 @@
           "type": "string",
           "enum": ["invited", "waiting", "inprogress", "completed"],
           "description": "The current status of the game."
+        },
+        "timeControl": {
+          "type": "object",
+          "description": "Time control settings for the game.",
+          "properties": {
+            "initial": {
+              "type": "number",
+              "description": "Initial time for each player in seconds."
+            },
+            "increment": {
+              "type": "number",
+              "description": "Time increment per move in seconds."
+            }
+          }
         }
       },
       "required": [
