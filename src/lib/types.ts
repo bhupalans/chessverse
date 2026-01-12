@@ -29,7 +29,7 @@ export type Game = {
   fen: string;
   turn: 'w' | 'b';
   moves: string[];
-  winner?: 'w' | 'b' | 'd'; // d for draw
+  winnerId?: 'w' | 'b' | 'd'; // d for draw
   drawOffer?: 'w' | 'b' | null;
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate';
 };

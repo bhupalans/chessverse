@@ -130,23 +130,21 @@ function GamePageContent() {
       const currentTurn = localGame.turn();
       const newGame = new Chess(gameData.fen);
       
-      // Check if the FEN from Firestore is different from the local one
-      if (gameData.fen !== localGame.fen()) {
-        setLocalGame(newGame);
+      // This is now the single source of truth for the board state.
+      setLocalGame(newGame);
 
-        const history = newGame.history({ verbose: true });
-        if (history.length > 0) {
-          const lastHistoryMove = history[history.length - 1];
-          setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-          
-          if (newGame.turn() !== currentTurn) {
-            if (newGame.inCheck()) playSound('check');
-            else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-            else playSound('move');
-          }
-        } else {
-          setLastMove(null);
+      const history = newGame.history({ verbose: true });
+      if (history.length > 0) {
+        const lastHistoryMove = history[history.length - 1];
+        setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+        
+        if (newGame.turn() !== currentTurn) {
+          if (newGame.inCheck()) playSound('check');
+          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+          else playSound('move');
         }
+      } else {
+        setLastMove(null);
       }
     }
     
@@ -154,12 +152,12 @@ function GamePageContent() {
       setGameStarted(true);
     }
 
-    if (gameData?.status === 'completed' && gameData.winner && !gameOverState) {
+    if (gameData?.status === 'completed' && gameData.winnerId && !gameOverState) {
       let reason = 'Checkmate!';
       if (gameData.reason === 'draw') reason = 'Draw by agreement';
       else if(gameData.reason === 'resign') reason = 'Resignation';
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
-      handleGameOver(reason, gameData.winner);
+      handleGameOver(reason, gameData.winnerId);
     }
   }, [gameData, playSound, gameStarted, gameOverState, handleGameOver]);
 
@@ -253,7 +251,7 @@ function GamePageContent() {
         if (tempGame.isGameOver()) {
           updatePayload.status = 'completed';
           let reason: GameType['reason'] = 'checkmate';
-          let winner: GameType['winner'] = localGame.turn() === 'b' ? 'w' : 'b';
+          let winner: GameType['winnerId'] = localGame.turn() === 'b' ? 'w' : 'b';
 
           if (tempGame.isCheckmate()) {
             reason = 'checkmate';
@@ -266,7 +264,7 @@ function GamePageContent() {
             winner = 'd';
           }
           
-          updatePayload.winner = winner;
+          updatePayload.winnerId = winner;
           updatePayload.reason = reason;
           handleGameOver(reason!, winner);
         }
@@ -308,7 +306,7 @@ function GamePageContent() {
     if (finalGameOver) return;
     const winner = opponentColor;
     if (!isBotGame && gameRef) {
-      updateDocumentNonBlocking(gameRef, { status: 'completed', winner: winner, reason: 'resign' });
+      updateDocumentNonBlocking(gameRef, { status: 'completed', winnerId: winner, reason: 'resign' });
     }
     const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayerData?.username : whitePlayerData?.username) || 'Opponent';
     handleGameOver(`You have resigned. ${opponentName} wins.`, winner);
@@ -328,7 +326,7 @@ function GamePageContent() {
   const handleDrawResponse = (accept: boolean) => {
     if (!isBotGame && gameRef) {
       if (accept) {
-        updateDocumentNonBlocking(gameRef, { status: 'completed', winner: 'd', reason: 'draw', drawOffer: null });
+        updateDocumentNonBlocking(gameRef, { status: 'completed', winnerId: 'd', reason: 'draw', drawOffer: null });
         handleGameOver('Game drawn by agreement.', 'd');
       } else {
         updateDocumentNonBlocking(gameRef, { drawOffer: null });
