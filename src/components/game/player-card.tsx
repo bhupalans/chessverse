@@ -1,3 +1,4 @@
+
 'use client';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ export const PlayerCard = ({
 }: {
   name: string;
   elo: number;
-  avatar: string;
+  avatar?: string;
   isTurn?: boolean;
   isBot?: boolean;
   color?: 'White' | 'Black';

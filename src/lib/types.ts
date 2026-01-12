@@ -4,14 +4,14 @@ import type { FunctionComponent } from "react";
 export type Player = {
   id: string;
   username: string;
-  avatarUrl: string;
+  avatarUrl?: string;
   eloRating: number;
 };
 
 export type User = {
   id: string;
   username: string;
-  avatarUrl: string;
+  avatarUrl?: string;
   eloRating: number;
   onlineStatus: 'online' | 'offline';
 };

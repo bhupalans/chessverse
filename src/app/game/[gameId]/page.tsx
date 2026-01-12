@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
-import type { Game as GameType } from '@/lib/types';
+import type { Game as GameType, User as UserType } from '@/lib/types';
 import { doc, type DocumentData } from 'firebase/firestore';
 
 
@@ -41,8 +41,15 @@ function GamePageContent() {
 
   const firestore = useFirestore();
   const { user } = useUser();
+  
   const gameRef = useMemoFirebase(() => firestore && gameId ? doc(firestore, 'games', gameId) : null, [firestore, gameId]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
+
+  const whitePlayerRef = useMemoFirebase(() => firestore && gameData?.player1Id ? doc(firestore, 'users', gameData.player1Id) : null, [firestore, gameData?.player1Id]);
+  const { data: whitePlayerData, isLoading: isWhitePlayerLoading } = useDoc<UserType>(whitePlayerRef);
+  
+  const blackPlayerRef = useMemoFirebase(() => firestore && gameData?.player2Id ? doc(firestore, 'users', gameData.player2Id) : null, [firestore, gameData?.player2Id]);
+  const { data: blackPlayerData, isLoading: isBlackPlayerLoading } = useDoc<UserType>(blackPlayerRef);
 
   const [localGame, setLocalGame] = useState(() => new Chess());
   const [fen, setFen] = useState('start');
@@ -58,7 +65,7 @@ function GamePageContent() {
   
   const playerColor = useMemo<Color>(() => {
     if (!gameData || !user) return 'w';
-    if (isBotGame) return 'w'; // Human is always white against the bot
+    if (isBotGame) return 'w';
     return gameData.player1Id === user.uid ? 'w' : 'b';
   }, [gameData, user, isBotGame]);
 
@@ -104,20 +111,19 @@ function GamePageContent() {
       if (winnerData !== 'd') {
           if (isBotGame) {
               winnerName = winnerData === playerColor ? (user?.displayName || 'You') : 'Stockfish Bot';
-          } else if (gameData) {
+          } else if (whitePlayerData && blackPlayerData) {
               if (winnerData === 'w') {
-                  winnerName = gameData.player1?.username || 'Player 1';
+                  winnerName = whitePlayerData.username;
               } else {
-                  winnerName = gameData.player2?.username || 'Player 2';
+                  winnerName = blackPlayerData.username;
               }
           }
       }
       setGameOverState({ winner: winnerName, reason });
-  }, [isBotGame, gameData, localGame, playerColor, playSound, user, findKingPositions]);
+  }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData]);
 
   useEffect(() => {
     if (gameData?.fen) {
-      // Logic to handle incoming game state from Firestore
       if (fen !== gameData.fen) {
         const newGame = new Chess(gameData.fen);
         setLocalGame(newGame);
@@ -128,6 +134,7 @@ function GamePageContent() {
           const lastHistoryMove = history[history.length - 1];
           setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
           if (newGame.inCheck()) playSound('check');
+          else playSound('move');
         }
       }
     }
@@ -291,7 +298,7 @@ function GamePageContent() {
     if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { status: 'completed', winner: winner, reason: 'resign' });
     }
-    const opponentName = isBotGame ? 'Stockfish Bot' : gameData?.player1Id === user?.uid ? gameData?.player2?.username : gameData?.player1?.username;
+    const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayerData?.username : whitePlayerData?.username) || 'Opponent';
     handleGameOver(`You have resigned. ${opponentName} wins.`, winner);
   };
 
@@ -336,18 +343,11 @@ function GamePageContent() {
   if (isBotGame) {
     whitePlayer = humanPlayer;
     blackPlayer = botPlayer;
-  } else if (gameData?.player1 && gameData?.player2) {
-      // Definitive check to assign white and black players correctly
-      if (gameData.player1.id === gameData.player1Id) {
-        whitePlayer = gameData.player1;
-        blackPlayer = gameData.player2;
-      } else {
-        whitePlayer = gameData.player2;
-        blackPlayer = gameData.player1;
-      }
-  } else if (gameData?.player1) {
-    // If only one player is present, they must be white
-    whitePlayer = gameData.player1;
+  } else if (whitePlayerData && blackPlayerData) {
+      whitePlayer = whitePlayerData;
+      blackPlayer = blackPlayerData;
+  } else if (whitePlayerData) {
+    whitePlayer = whitePlayerData;
     blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   } else {
      // Placeholder for loading state
@@ -355,12 +355,13 @@ function GamePageContent() {
      blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   }
 
+
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = gameData?.turn || localGame.turn();
   const drawOfferedToMe = gameData?.drawOffer === opponentColor;
 
-  if (isGameLoading) {
+  if (isGameLoading || (gameId && !isBotGame && (isWhitePlayerLoading || isBlackPlayerLoading))) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
    if (!gameData && !isBotGame) {
@@ -377,7 +378,7 @@ function GamePageContent() {
             avatar={topPlayer.avatarUrl}
             isBot={isBotGame && topPlayer.id === 'bot'} 
             isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
-            color={'Black'}
+            color={playerColor === 'w' ? 'Black' : 'White'}
           />
           <div className="relative">
             <Chessboard 
@@ -420,7 +421,7 @@ function GamePageContent() {
             avatar={bottomPlayer.avatarUrl}
             isBot={isBotGame && bottomPlayer.id === 'bot'}
             isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
-            color={'White'}
+            color={playerColor === 'w' ? 'White' : 'Black'}
             drawOffered={drawOfferedToMe}
             onDrawResponse={handleDrawResponse}
           />
@@ -463,3 +464,4 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
