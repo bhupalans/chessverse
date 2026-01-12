@@ -11,9 +11,8 @@ import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
-import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking, useRealtimeDB } from '@/firebase';
-import type { Game as GameType, User as UserType } from '@/lib/types';
-import { doc, type DocumentData } from 'firebase/firestore';
+import { useUser, useRealtimeDB } from '@/firebase';
+import type { User as UserType } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
 import { ref, onValue } from 'firebase/database';
@@ -33,7 +32,6 @@ function GamePageContent() {
   const playMode = searchParams.get('play');
   const isBotGame = playMode === 'bot';
 
-  const firestore = useFirestore();
   const realtimeDB = useRealtimeDB();
   const { user } = useUser();
   
@@ -51,10 +49,7 @@ function GamePageContent() {
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
 
-  const whitePlayerId = "player1"; // Placeholder
-  const blackPlayerId = "player2"; // Placeholder
-
-  // This data will eventually come from the game object
+  // This data will eventually come from the game object in a different way, not Firestore
   const whitePlayerData: UserType | null = {id: '1', username: "Player 1", email: '', eloRating: 1200, onlineStatus: 'online', completedGames: 0};
   const blackPlayerData: UserType | null = {id: '2', username: "Player 2", email: '', eloRating: 1200, onlineStatus: 'online', completedGames: 0};
   
@@ -63,12 +58,12 @@ function GamePageContent() {
 
     setIsGameLoading(true);
     const gameRef = ref(realtimeDB, `liveGames/${gameId}`);
+    
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setGameData(data);
       } else {
-        // Handle case where game doesn't exist
         toast({
           variant: 'destructive',
           title: 'Game not found',
@@ -108,7 +103,6 @@ function GamePageContent() {
     }
   }, [gameFen]);
 
-  // Sound playing utility
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
     if (typeof window !== 'undefined') {
       try {
@@ -160,7 +154,6 @@ function GamePageContent() {
       }
   }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameOverState]);
   
-  // Effect to sync local chess instance with remote data
   useEffect(() => {
     if (isBotGame || !gameData) return;
 
@@ -254,11 +247,10 @@ function GamePageContent() {
   const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver(), [gameOverState, game]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    // Move validation and writing to DB will be implemented later.
-    // For now, this is a read-only implementation.
+    // Read only for now as per instructions
     toast({
       title: 'Read-only Mode',
-      description: 'Move validation and database writes are not yet implemented.',
+      description: 'The board is currently in read-only mode.',
     });
     return false;
   };
