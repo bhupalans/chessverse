@@ -11,11 +11,12 @@ import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
-import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking } from '@/firebase';
+import { useDoc, useFirestore, useUser, useMemoFirebase, updateDocumentNonBlocking, useRealtimeDB } from '@/firebase';
 import type { Game as GameType, User as UserType } from '@/lib/types';
 import { doc, type DocumentData } from 'firebase/firestore';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
+import { ref, onValue } from 'firebase/database';
 
 
 declare global {
@@ -33,11 +34,12 @@ function GamePageContent() {
   const isBotGame = playMode === 'bot';
 
   const firestore = useFirestore();
+  const realtimeDB = useRealtimeDB();
   const { user } = useUser();
   
-  const gameRef = useMemoFirebase(() => firestore && gameId && !isBotGame ? doc(firestore, 'games', gameId) : null, [firestore, gameId, isBotGame]);
-  const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
-  
+  const [gameData, setGameData] = useState<{fen: string; turn: string} | null>(null);
+  const [isGameLoading, setIsGameLoading] = useState(!isBotGame);
+
   const [botGameFen, setBotGameFen] = useState(() => new Chess().fen());
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
@@ -49,19 +51,48 @@ function GamePageContent() {
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
 
-  const whitePlayerId = gameData?.player1Id;
-  const blackPlayerId = gameData?.player2Id;
+  const whitePlayerId = "player1"; // Placeholder
+  const blackPlayerId = "player2"; // Placeholder
 
-  const whitePlayerRef = useMemoFirebase(() => firestore && whitePlayerId ? doc(firestore, 'users', whitePlayerId) : null, [firestore, whitePlayerId]);
-  const { data: whitePlayerData } = useDoc<UserType>(whitePlayerRef);
+  // This data will eventually come from the game object
+  const whitePlayerData: UserType | null = {id: '1', username: "Player 1", email: '', eloRating: 1200, onlineStatus: 'online', completedGames: 0};
+  const blackPlayerData: UserType | null = {id: '2', username: "Player 2", email: '', eloRating: 1200, onlineStatus: 'online', completedGames: 0};
   
-  const blackPlayerRef = useMemoFirebase(() => firestore && blackPlayerId ? doc(firestore, 'users', blackPlayerId) : null, [firestore, blackPlayerId]);
-  const { data: blackPlayerData } = useDoc<UserType>(blackPlayerRef);
-  
+  useEffect(() => {
+    if (isBotGame || !realtimeDB || !gameId) return;
+
+    setIsGameLoading(true);
+    const gameRef = ref(realtimeDB, `liveGames/${gameId}`);
+    const unsubscribe = onValue(gameRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setGameData(data);
+      } else {
+        // Handle case where game doesn't exist
+        toast({
+          variant: 'destructive',
+          title: 'Game not found',
+          description: `Could not load game with ID: ${gameId}`
+        });
+      }
+      setIsGameLoading(false);
+    }, (error) => {
+      console.error("Realtime DB Error:", error);
+      toast({
+          variant: 'destructive',
+          title: 'Error loading game',
+          description: "There was a problem connecting to the database."
+      });
+      setIsGameLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [realtimeDB, gameId, isBotGame, toast]);
+
   const playerColor = useMemo<Color>(() => {
-    if (isBotGame || !gameData || !user) return 'w';
-    return gameData.player1Id === user.uid ? 'w' : 'b';
-  }, [gameData, user, isBotGame]);
+    // For now, player is always white. This will be updated with real user data.
+    return 'w';
+  }, []);
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
   
@@ -149,17 +180,10 @@ function GamePageContent() {
       setLastMove(null);
     }
     
-    if (gameData.status === 'inprogress' && !gameStarted) {
+    if (!gameStarted) {
       setGameStarted(true);
     }
 
-    if (gameData.status === 'completed' && !gameOverState) {
-      let reason = 'Checkmate!';
-      if (gameData.reason === 'draw') reason = 'Draw by agreement';
-      else if(gameData.reason === 'resign') reason = 'Resignation';
-      else if(gameData.reason === 'stalemate') reason = 'Stalemate';
-      handleGameOver(reason, gameData.winnerId as 'w' | 'b' | 'd');
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameData, isBotGame]);
 
@@ -230,103 +254,35 @@ function GamePageContent() {
   const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver(), [gameOverState, game]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    const currentTurn = game.turn();
-    if (finalGameOver || currentTurn !== playerColor) return false;
-
-    const tempGame = new Chess(game.fen());
-    const result = tempGame.move(move);
-
-    if (!result) {
-      playSound('illegal');
-      toast({
-        variant: 'destructive',
-        title: 'Invalid Move',
-        description: 'You cannot move the piece to that square.',
-      });
-      return false;
-    }
-
-    if (result.flags.includes('c')) playSound('capture');
-    else playSound('move');
-    if (tempGame.inCheck()) playSound('check');
-
-    const newFen = tempGame.fen();
-    
-    if (isBotGame) {
-      setBotGameFen(newFen);
-      setLastMove({ from: result.from, to: result.to });
-      if (!tempGame.isGameOver() && engine.current) {
-        engine.current.postMessage(`position fen ${newFen}`);
-        setTimeout(engineGo, 200);
-      } else if (tempGame.isGameOver()) {
-        if (tempGame.isCheckmate()) handleGameOver('Checkmate!', playerColor);
-        else if (tempGame.isStalemate()) handleGameOver('Stalemate', 'd');
-        else if (tempGame.isDraw()) handleGameOver('Draw', 'd');
-      }
-    } else if (gameRef) {
-      const updatePayload: Partial<GameType> & DocumentData = {
-        fen: newFen,
-        turn: tempGame.turn(),
-        moves: [...(gameData?.moves || []), result.san]
-      };
-
-      if (tempGame.isGameOver()) {
-        updatePayload.status = 'completed';
-        let reason: GameType['reason'] = 'checkmate';
-        let winnerId: GameType['winnerId'] = tempGame.turn() === 'w' ? 'b' : 'w';
-
-        if (tempGame.isStalemate()) {
-          reason = 'stalemate';
-          winnerId = 'd';
-        } else if (tempGame.isDraw()) {
-          reason = 'draw';
-          winnerId = 'd';
-        }
-        
-        updatePayload.winnerId = winnerId;
-        updatePayload.reason = reason;
-      }
-      
-      updateDocumentNonBlocking(gameRef, updatePayload);
-    }
-    
-    return true;
+    // Move validation and writing to DB will be implemented later.
+    // For now, this is a read-only implementation.
+    toast({
+      title: 'Read-only Mode',
+      description: 'Move validation and database writes are not yet implemented.',
+    });
+    return false;
   };
 
   const handleResign = () => {
     if (finalGameOver) return;
     const winnerId = opponentColor;
-    if (!isBotGame && gameRef) {
-      updateDocumentNonBlocking(gameRef, { status: 'completed', winnerId: winnerId, reason: 'resign' });
-    }
     const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayerData?.username : whitePlayerData?.username) || 'Opponent';
     handleGameOver(`You have resigned. ${opponentName} wins.`, winnerId);
   };
 
   const handleOfferDraw = () => {
-    if (finalGameOver || !!gameData?.drawOffer) return;
-    if (!isBotGame && gameRef) {
-      updateDocumentNonBlocking(gameRef, { drawOffer: playerColor });
-      toast({
-        title: 'Draw Offer Sent',
-        description: 'Your opponent has been offered a draw.',
+     if (finalGameOver) return;
+     toast({
+        title: 'Draw Offer',
+        description: 'Draw offer functionality is not yet implemented.',
       });
-    }
   };
 
   const handleDrawResponse = (accept: boolean) => {
-    if (!isBotGame && gameRef) {
-      if (accept) {
-        updateDocumentNonBlocking(gameRef, { status: 'completed', winnerId: 'd', reason: 'draw', drawOffer: null });
-        handleGameOver('Game drawn by agreement.', 'd');
-      } else {
-        updateDocumentNonBlocking(gameRef, { drawOffer: null });
-        toast({
-          title: 'Draw Offer Declined',
-          description: 'The game continues.',
-        });
-      }
-    }
+    toast({
+      title: 'Draw Offer',
+      description: 'Draw offer functionality is not yet implemented.',
+    });
   };
 
   const handleStartGame = () => {
@@ -353,7 +309,7 @@ function GamePageContent() {
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = game.turn();
-  const drawOfferedToMe = gameData?.drawOffer === opponentColor;
+  const drawOfferedToMe = false; // Placeholder
 
   if (isGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
@@ -443,9 +399,9 @@ function GamePageContent() {
                   <Button variant="outline" onClick={handleResign} disabled={finalGameOver}>
                     <Flag className="mr-2 h-4 w-4" /> Resign
                   </Button>
-                  <Button variant="outline" onClick={handleOfferDraw} disabled={finalGameOver || !!gameData?.drawOffer}>
+                  <Button variant="outline" onClick={handleOfferDraw} disabled={finalGameOver}>
                     <Swords className="mr-2 h-4 w-4" /> 
-                    {gameData?.drawOffer === playerColor ? 'Offered' : 'Offer Draw'}
+                    Offer Draw
                   </Button>
                 </>
               ) : !isBotGame ? (
