@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { createContext, useState, ReactNode, useMemo } from 'react';
 import { CHESS_THEMES, type ChessTheme } from '@/lib/chess-themes';
 import { PIECE_SETS, type PieceSet } from '@/lib/piece-sets';
 
@@ -22,8 +22,15 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [theme, setTheme] = useState<ChessTheme>(CHESS_THEMES[0]);
   const [pieceSet, setPieceSet] = useState<PieceSet>(PIECE_SETS[0]);
 
+  const contextValue = useMemo(() => ({
+    theme,
+    setTheme,
+    pieceSet,
+    setPieceSet
+  }), [theme, pieceSet]);
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, pieceSet, setPieceSet }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );
