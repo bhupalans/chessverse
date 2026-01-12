@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth, useFirestore, useUser } from '@/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { Chess } from 'chess.js';
 
 export function CreateGameDialog() {
   const [isOpen, setIsOpen] = useState(false);
@@ -25,10 +26,8 @@ export function CreateGameDialog() {
   const { toast } = useToast();
 
   const handleCreateBotGame = () => {
-    const gameId = `game-${Math.random().toString(36).substr(2, 9)}`;
-    const url = `/game/${gameId}?play=bot`;
-    router.push(url);
     setIsOpen(false);
+    router.push(`/game/bot-game-${Date.now()}?play=bot`);
   };
 
   const handleCreatePlayerGame = async () => {
@@ -43,15 +42,18 @@ export function CreateGameDialog() {
 
     try {
       const gamesCollection = collection(firestore, 'games');
+      const newGame = new Chess();
       const newGameDoc = await addDoc(gamesCollection, {
         player1Id: user.uid,
         player1: {
           id: user.uid,
-          name: user.displayName || 'Anonymous',
+          username: user.displayName || 'Anonymous',
           avatarUrl: user.photoURL || '',
+          eloRating: 1200, // Placeholder ELO
         },
         status: 'waiting',
         createdAt: serverTimestamp(),
+        fen: newGame.fen(),
         turn: 'w',
       });
       router.push(`/game/${newGameDoc.id}`);
@@ -109,3 +111,5 @@ export function CreateGameDialog() {
     </Dialog>
   );
 }
+
+    

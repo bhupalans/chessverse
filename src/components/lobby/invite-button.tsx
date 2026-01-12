@@ -66,15 +66,15 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
         player2Id: invitee.id,
         player1: {
           id: inviter.uid,
-          name: inviter.displayName,
+          username: inviter.displayName,
           avatarUrl: inviter.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl,
-          elo: 1200, // Placeholder
+          eloRating: 1200, // Placeholder
         },
         player2: {
           id: invitee.id,
-          name: invitee.username,
+          username: invitee.username,
           avatarUrl: invitee.avatarUrl || PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl,
-          elo: invitee.eloRating,
+          eloRating: invitee.eloRating,
         },
         status: 'invited',
         createdAt: serverTimestamp(),
@@ -109,3 +109,5 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
     </Button>
   );
 }
+
+    

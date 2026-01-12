@@ -3,9 +3,9 @@ import type { FunctionComponent } from "react";
 
 export type Player = {
   id: string;
-  name: string;
+  username: string;
   avatarUrl: string;
-  elo: number;
+  eloRating: number;
 };
 
 export type User = {
@@ -62,3 +62,5 @@ export interface ChessPieceProps {
 }
 
 export type PieceComponent = FunctionComponent<ChessPieceProps>;
+
+    

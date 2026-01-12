@@ -50,6 +50,7 @@ function GamePageContent() {
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
   const [kingPositions, setKingPositions] = useState<{ w: ChessJsSquare, b: ChessJsSquare } | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: ChessJsSquare; to: ChessJsSquare } | null>(null);
   
   const { toast } = useToast();
   const engine = useRef<any>(null);
@@ -104,9 +105,9 @@ function GamePageContent() {
               winnerName = winnerData === playerColor ? (user?.displayName || 'You') : 'Stockfish Bot';
           } else if (gameData) {
               if (winnerData === 'w') {
-                  winnerName = gameData.player1?.name || 'Player 1';
+                  winnerName = gameData.player1?.username || 'Player 1';
               } else {
-                  winnerName = gameData.player2?.name || 'Player 2';
+                  winnerName = gameData.player2?.username || 'Player 2';
               }
           }
       }
@@ -116,8 +117,15 @@ function GamePageContent() {
   useEffect(() => {
     if (gameData?.fen) {
       if(localGame.fen() !== gameData.fen) {
+        const oldFen = localGame.fen();
         localGame.load(gameData.fen);
         setFen(localGame.fen());
+        
+        const history = localGame.history({ verbose: true });
+        if(history.length > 0) {
+            const lastHistoryMove = history[history.length - 1];
+            setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+        }
       }
     }
     if (gameData?.status === 'inprogress') {
@@ -156,6 +164,7 @@ function GamePageContent() {
                     if (moveResult.flags.includes('c')) playSound('capture');
                     else playSound('move');
                     if (localGame.inCheck()) playSound('check');
+                    setLastMove({ from: moveResult.from, to: moveResult.to });
                   }
                   setFen(localGame.fen());
                   if (localGame.isGameOver()) {
@@ -207,6 +216,7 @@ function GamePageContent() {
         if (tempGame.inCheck()) playSound('check');
 
         const newFen = tempGame.fen();
+        setLastMove({ from: result.from, to: result.to });
         
         const updatePayload: Partial<GameType> & DocumentData = {
             fen: newFen,
@@ -273,7 +283,7 @@ function GamePageContent() {
     if (!isBotGame && gameRef) {
       updateDocumentNonBlocking(gameRef, { status: 'completed', winner: winner, reason: 'resign' });
     }
-    const opponentName = isBotGame ? 'Stockfish Bot' : gameData?.player1Id === user?.uid ? gameData?.player2?.name : gameData?.player1?.name;
+    const opponentName = isBotGame ? 'Stockfish Bot' : gameData?.player1Id === user?.uid ? gameData?.player2?.username : gameData?.player1?.username;
     handleGameOver(`You have resigned. ${opponentName} wins.`, winner);
   };
 
@@ -310,15 +320,27 @@ function GamePageContent() {
      }
   };
   
-  const botPlayer = { id: 'bot', name: 'Stockfish Bot', elo: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
-  const humanPlayer = { id: user?.uid || 'human', name: user?.displayName || 'You', elo: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
+  const botPlayer = { id: 'bot', username: 'Stockfish Bot', eloRating: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
+  const humanPlayer = { id: user?.uid || 'human', username: user?.displayName || 'You', eloRating: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
   
-  const p1 = isBotGame ? humanPlayer : (gameData?.player1 || { id: 'p1', name: 'Player 1', elo: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' });
-  const p2 = isBotGame ? botPlayer : (gameData?.player2 || { id: 'p2', name: 'Player 2', elo: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' });
+  let whitePlayer, blackPlayer;
 
-  const whitePlayer = p1;
-  const blackPlayer = p2;
-  
+  if (isBotGame) {
+    whitePlayer = humanPlayer;
+    blackPlayer = botPlayer;
+  } else if (gameData?.player1 && gameData?.player2) {
+    if (gameData.player1.id === gameData.player1Id) {
+      whitePlayer = gameData.player1;
+      blackPlayer = gameData.player2;
+    } else {
+      whitePlayer = gameData.player2;
+      blackPlayer = gameData.player1;
+    }
+  } else {
+     whitePlayer = gameData?.player1 || { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
+     blackPlayer = gameData?.player2 || { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
+  }
+
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = gameData?.turn || localGame.turn();
@@ -336,8 +358,8 @@ function GamePageContent() {
       <div className="flex h-full flex-col items-center justify-center bg-background p-4 lg:p-8">
         <div className="w-full max-w-lg space-y-4">
           <PlayerCard 
-            name={topPlayer.name} 
-            elo={topPlayer.elo} 
+            name={topPlayer.username} 
+            elo={topPlayer.eloRating} 
             avatar={topPlayer.avatarUrl}
             isBot={isBotGame && topPlayer.id === 'bot'} 
             isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
@@ -354,6 +376,7 @@ function GamePageContent() {
               turn={currentTurn}
               winner={winnerColor}
               kingPositions={kingPositions}
+              lastMove={lastMove}
             />
             {gameOverState && (
                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
@@ -378,8 +401,8 @@ function GamePageContent() {
             )}
           </div>
            <PlayerCard 
-            name={bottomPlayer.name} 
-            elo={bottomPlayer.elo} 
+            name={bottomPlayer.username} 
+            elo={bottomPlayer.eloRating} 
             avatar={bottomPlayer.avatarUrl}
             isBot={isBotGame && bottomPlayer.id === 'bot'}
             isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
@@ -403,7 +426,7 @@ function GamePageContent() {
               ) : isBotGame ? (
                 <Button onClick={handleStartGame} className="col-span-2" disabled={isEngineLoading}>
                   <Play className="mr-2 h-4 w-4" /> 
-                  {isEngineLoading ? 'Loading Engine...' : 'Loading Game...'}
+                  {isEngineLoading ? 'Loading Engine...' : 'Play vs Bot'}
                 </Button>
               ) : (
                  <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
@@ -426,3 +449,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    

@@ -42,7 +42,7 @@ export function InvitationListener() {
       invitations.forEach((invitation) => {
         // Only show a toast if one for this game isn't already displayed
         if (!displayedToasts.current.has(invitation.id)) {
-          const inviterName = invitation.player1?.name || 'Another player';
+          const inviterName = invitation.player1?.username || 'Another player';
           
           const { id: toastId, dismiss: dismissToast } = toast({
             title: 'Game Invitation',
@@ -99,3 +99,5 @@ export function InvitationListener() {
 
   return null; // This component does not render anything
 }
+
+    

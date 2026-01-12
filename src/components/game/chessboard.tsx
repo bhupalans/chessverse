@@ -17,6 +17,7 @@ export function Chessboard({
   turn,
   winner,
   kingPositions,
+  lastMove,
 }: {
   fen: string;
   onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
@@ -27,6 +28,7 @@ export function Chessboard({
   turn: Color;
   winner: 'w' | 'b' | 'd' | null;
   kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
+  lastMove: { from: ChessJsSquare, to: ChessJsSquare } | null;
 }) {
   const { theme, pieceSet } = useContext(ThemeContext);
   const PieceComponent = pieceSet.component;
@@ -122,6 +124,7 @@ export function Chessboard({
             const isLightSquare = (rowIndex + colIndex) % 2 !== 0;
             const isSelected = selectedSquare === squareName;
             const isPossibleMove = validMovesForSelectedPiece.has(squareName);
+            const isLastMove = lastMove && (lastMove.from === squareName || lastMove.to === squareName);
 
             const isWinningKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && pieceOnSquare?.type === 'k' && pieceOnSquare?.color === winner;
             const isLosingKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && pieceOnSquare?.type === 'k' && pieceOnSquare?.color !== winner;
@@ -140,7 +143,8 @@ export function Chessboard({
                   className={cn(
                     'relative flex h-full w-full items-center justify-center transition-colors',
                     (gameStarted && !isGameOver) && 'cursor-pointer',
-                    isSelected && 'bg-yellow-500/50'
+                    isSelected && 'bg-yellow-500/50',
+                    isLastMove && 'bg-yellow-400/40'
                   )}
                 >
                   {pieceOnSquare && <PieceComponent type={pieceOnSquare.type} color={pieceOnSquare.color} />}
@@ -171,3 +175,5 @@ export function Chessboard({
     </div>
   );
 }
+
+    
