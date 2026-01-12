@@ -34,6 +34,11 @@ export type LastDrawAction = {
     at: any; // Firestore Timestamp
 }
 
+export type TimeControl = {
+    initial: number; // in seconds
+    increment: number; // in seconds
+}
+
 export type Game = {
   id:string;
   player1Id?: string;
@@ -50,6 +55,7 @@ export type Game = {
   drawOffer?: 'w' | 'b' | null;
   lastDrawAction?: LastDrawAction;
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate';
+  timeControl?: TimeControl;
 };
 
 export type HistoryGame = {
@@ -59,3 +65,19 @@ export type HistoryGame = {
   date: string;
   eloChange: string;
 };
+
+export type LiveClock = {
+    white: number;
+    black: number;
+    running: 'w' | 'b';
+    lastTick: number; // Timestamp
+}
+
+export type LiveGame = {
+    fen: string;
+    turn: 'w' | 'b';
+    lastMove?: LastMove;
+    clocks?: LiveClock;
+}
+
+    

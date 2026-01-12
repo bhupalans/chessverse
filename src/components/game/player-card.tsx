@@ -4,6 +4,17 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Bot, Timer, Handshake } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useMemo } from 'react';
+
+const formatTime = (timeInSeconds: number | null | undefined): string => {
+  if (timeInSeconds === null || typeof timeInSeconds === 'undefined' || timeInSeconds < 0) {
+    return '00:00';
+  }
+  const minutes = Math.floor(timeInSeconds / 60);
+  const seconds = Math.floor(timeInSeconds % 60);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 
 export const PlayerCard = ({
   name,
@@ -12,6 +23,7 @@ export const PlayerCard = ({
   isTurn,
   isBot = false,
   color,
+  time,
   drawOffered,
   onDrawResponse,
 }: {
@@ -21,43 +33,52 @@ export const PlayerCard = ({
   isTurn?: boolean;
   isBot?: boolean;
   color?: 'White' | 'Black';
+  time?: number | null;
   drawOffered?: boolean;
   onDrawResponse?: (accept: boolean) => void;
-}) => (
-  <div className={cn("flex items-center justify-between p-3 rounded-lg bg-card text-card-foreground", isTurn && "bg-primary/10")}>
-    <div className="flex items-center gap-3">
-      <Avatar>
-        <AvatarImage src={avatar} />
-        <AvatarFallback>{name ? name.charAt(0) : '?'}</AvatarFallback>
-      </Avatar>
-      <div>
-        <div className="flex items-center gap-2">
-          <p className="font-semibold">{name}</p>
-          {color && <span className="text-xs font-medium text-muted-foreground">({color})</span>}
-          {isBot && <Bot className="h-4 w-4 text-muted-foreground" />}
+}) => {
+  const formattedTime = useMemo(() => formatTime(time), [time]);
+
+  return (
+    <div className={cn("flex items-center justify-between p-3 rounded-lg bg-card text-card-foreground", isTurn && "bg-primary/10")}>
+      <div className="flex items-center gap-3">
+        <Avatar>
+          <AvatarImage src={avatar} />
+          <AvatarFallback>{name ? name.charAt(0) : '?'}</AvatarFallback>
+        </Avatar>
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold">{name}</p>
+            {color && <span className="text-xs font-medium text-muted-foreground">({color})</span>}
+            {isBot && <Bot className="h-4 w-4 text-muted-foreground" />}
+          </div>
+          <p className="text-sm text-muted-foreground">ELO: {elo}</p>
         </div>
-        <p className="text-sm text-muted-foreground">ELO: {elo}</p>
+      </div>
+
+      <div className="flex items-center gap-4">
+        {drawOffered && onDrawResponse && (
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-1 text-sm text-amber-500">
+              <Handshake className="h-4 w-4" />
+              <span>Draw Offer</span>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" className="h-7 bg-green-600/20 text-green-700 hover:bg-green-600/30" onClick={() => onDrawResponse(true)}>Accept</Button>
+              <Button size="sm" variant="secondary" className="h-7 bg-red-600/20 text-red-700 hover:bg-red-600/30" onClick={() => onDrawResponse(false)}>Decline</Button>
+            </div>
+          </div>
+        )}
+
+        {typeof time === 'number' && (
+          <div className={cn("flex items-center gap-2 rounded-md p-2 font-mono text-xl", isTurn ? "bg-background/80" : "bg-transparent")}>
+            <Timer className={cn("h-6 w-6", isTurn ? "text-primary" : "text-muted-foreground")} />
+            <span className={cn(isTurn ? "text-foreground" : "text-muted-foreground", time < 10 && time > 0 && "text-destructive font-bold")}>{formattedTime}</span>
+          </div>
+        )}
       </div>
     </div>
-    {isTurn && !drawOffered &&(
-      <div className="flex items-center gap-2 text-primary">
-        <Timer className="h-5 w-5" />
-        <span className="font-bold">Thinking...</span>
-      </div>
-    )}
-     {drawOffered && onDrawResponse && (
-      <div className="flex flex-col items-center gap-2">
-        <div className="flex items-center gap-1 text-sm text-amber-500">
-           <Handshake className="h-4 w-4" />
-           <span>Draw Offer</span>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" className="bg-green-600/20 text-green-700 hover:bg-green-600/30" onClick={() => onDrawResponse(true)}>Accept</Button>
-          <Button size="sm" variant="secondary" className="bg-red-600/20 text-red-700 hover:bg-red-600/30" onClick={() => onDrawResponse(false)}>Decline</Button>
-        </div>
-      </div>
-    )}
-  </div>
-);
+  );
+};
 
     

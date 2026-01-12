@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import type { User as UserType, Game as GameType, LastMove } from '@/lib/types';
+import type { User as UserType, Game as GameType, LastMove, LiveGame } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
 import { ref, onValue } from 'firebase/database';
@@ -38,7 +38,8 @@ function GamePageContent() {
   const firestore = useFirestore();
   const { user } = useUser();
   
-  const [liveGameState, setLiveGameState] = useState<{fen: string; turn: string; lastMove?: LastMove} | null>(null);
+  const [liveGameState, setLiveGameState] = useState<LiveGame | null>(null);
+  const [displayClocks, setDisplayClocks] = useState<{ white: number; black: number } | null>(null);
   const [isGameLoading, setIsGameLoading] = useState(!isBotGame);
 
   const gameDocRef = useMemoFirebase(() => {
@@ -89,6 +90,9 @@ function GamePageContent() {
             setLastMove(null);
         }
         setLiveGameState(data);
+        if (data.clocks) {
+            setDisplayClocks({ white: data.clocks.white, black: data.clocks.black });
+        }
       } else if (!isFirestoreGameLoading && firestoreGame?.status !== 'inprogress') {
          setLiveGameState({ fen: new Chess().fen(), turn: 'w'});
       } else {
@@ -111,6 +115,39 @@ function GamePageContent() {
 
     return () => unsubscribe();
   }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
+
+  // Clock ticking effect
+  useEffect(() => {
+    if (!liveGameState?.clocks || !gameStarted || finalGameOver) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const { clocks } = liveGameState;
+      if (clocks.running !== game.turn()) {
+        return;
+      }
+      
+      const now = Date.now();
+      const lastTick = clocks.lastTick;
+      const elapsed = (now - lastTick) / 1000; // in seconds
+
+      const whoseTurn = clocks.running === 'w' ? 'white' : 'black';
+      let newTime = clocks[whoseTurn] - elapsed;
+      if (newTime < 0) newTime = 0;
+      
+      setDisplayClocks(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          [whoseTurn]: newTime
+        }
+      });
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [liveGameState, gameStarted, finalGameOver]);
+
 
   const playerColor = useMemo<Color>(() => {
     if (isBotGame || !user || !firestoreGame) return 'w';
@@ -396,6 +433,10 @@ function GamePageContent() {
   const currentTurn = game.turn();
   const drawOfferedToMe = !isBotGame && firestoreGame?.drawOffer === opponentColor;
 
+  const topPlayerTime = displayClocks ? (playerColor === 'w' ? displayClocks.black : displayClocks.white) : null;
+  const bottomPlayerTime = displayClocks ? (playerColor === 'w' ? displayClocks.white : displayClocks.black) : null;
+
+
   if (isGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
@@ -414,6 +455,7 @@ function GamePageContent() {
               isBot={isBotGame && topPlayer.id === 'bot'} 
               isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
               color={playerColor === 'w' ? 'Black' : 'White'}
+              time={topPlayerTime}
             />
           )}
           <div className="relative">
@@ -483,6 +525,7 @@ function GamePageContent() {
                 color={playerColor === 'w' ? 'White' : 'Black'}
                 drawOffered={drawOfferedToMe}
                 onDrawResponse={handleDrawResponse}
+                time={bottomPlayerTime}
               />
           )}
           <div className="p-4 flex items-center justify-between bg-card rounded-lg">
