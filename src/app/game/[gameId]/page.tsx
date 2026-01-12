@@ -45,7 +45,7 @@ function GamePageContent() {
   const gameRef = useMemoFirebase(() => firestore && gameId && !isBotGame ? doc(firestore, 'games', gameId) : null, [firestore, gameId, isBotGame]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
   
-  const [localGame, setLocalGame] = useState(() => new Chess());
+  const [botGameFen, setBotGameFen] = useState(() => new Chess().fen());
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
@@ -71,6 +71,17 @@ function GamePageContent() {
   }, [gameData, user, isBotGame]);
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
+  
+  const game = useMemo(() => {
+    const fen = isBotGame ? botGameFen : gameData?.fen;
+    if (!fen) return new Chess();
+    try {
+      return new Chess(fen);
+    } catch (e) {
+      console.error("Invalid FEN string:", fen);
+      return new Chess();
+    }
+  }, [isBotGame, botGameFen, gameData?.fen]);
 
   // Sound playing utility
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal') => {
@@ -102,12 +113,10 @@ function GamePageContent() {
 
   const handleGameOver = useCallback((reason: string, winner?: 'w' | 'b' | 'd') => {
       playSound('game-end');
-      const winnerData = winner || (localGame.turn() === 'b' ? 'w' : 'b');
+      const winnerData = winner || (game.turn() === 'b' ? 'w' : 'b');
       setWinnerColor(winnerData);
       
-      const fen = gameData?.fen || localGame.fen();
-      const tempGame = new Chess(fen);
-      findKingPositions(tempGame);
+      findKingPositions(game);
 
       let winnerName = 'draw';
       if (winnerData !== 'd') {
@@ -124,35 +133,34 @@ function GamePageContent() {
       if (!gameOverState) {
         setGameOverState({ winner: winnerName, reason });
       }
-  }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameData, gameOverState]);
+  }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameOverState]);
   
   // Effect to sync local chess instance with remote data
   useEffect(() => {
-    if (isBotGame || !gameData || !gameData.fen) return;
+    if (isBotGame || !gameData) return;
 
-    const oldTurn = localGame.turn();
     const newGame = new Chess(gameData.fen);
-    setLocalGame(newGame);
-
     const history = newGame.history({ verbose: true });
+    
     if (history.length > 0) {
       const lastHistoryMove = history[history.length - 1];
-      setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-      
-      if (newGame.turn() !== oldTurn) { // Play sound only if turn changed
-        if (newGame.inCheck()) playSound('check');
-        else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-        else playSound('move');
+      // Only play sound if the move is new by comparing SAN notation
+      const oldHistory = game.history();
+      if (oldHistory.length < history.length) {
+          if (newGame.inCheck()) playSound('check');
+          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+          else playSound('move');
       }
+      setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
     } else {
       setLastMove(null);
     }
     
-    if (gameData?.status === 'inprogress' && !gameStarted) {
+    if (gameData.status === 'inprogress' && !gameStarted) {
       setGameStarted(true);
     }
 
-    if (gameData?.status === 'completed' && !gameOverState) {
+    if (gameData.status === 'completed' && !gameOverState) {
       let reason = 'Checkmate!';
       if (gameData.reason === 'draw') reason = 'Draw by agreement';
       else if(gameData.reason === 'resign') reason = 'Resignation';
@@ -160,7 +168,7 @@ function GamePageContent() {
       handleGameOver(reason, gameData.winnerId as 'w' | 'b' | 'd');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameData, isBotGame]); // This hook ONLY reacts to gameData changes from the database
+  }, [gameData, isBotGame]);
 
 
   const engineGo = useCallback(() => {
@@ -181,7 +189,7 @@ function GamePageContent() {
             sf.addEventListener('message', (e: any) => {
               if (e.data?.startsWith('bestmove')) {
                 const bestMove = e.data.split(' ')[1];
-                const tempGame = new Chess(localGame.fen());
+                const tempGame = new Chess(game.fen());
                 if (bestMove && tempGame.turn() === opponentColor) {
                   const moveResult = tempGame.move(bestMove, { sloppy: true });
 
@@ -190,7 +198,7 @@ function GamePageContent() {
                     else playSound('move');
                     if (tempGame.inCheck()) playSound('check');
                     setLastMove({ from: moveResult.from, to: moveResult.to });
-                    setLocalGame(tempGame);
+                    setBotGameFen(tempGame.fen());
 
                     if (tempGame.isGameOver()) {
                       if(tempGame.isCheckmate()){
@@ -224,16 +232,16 @@ function GamePageContent() {
         }
       };
     }
-  }, [isBotGame, localGame, opponentColor, playSound, handleGameOver]);
+  }, [isBotGame, game, opponentColor, playSound, handleGameOver]);
 
-  const finalGameOver = useMemo(() => !!gameOverState || localGame.isGameOver(), [gameOverState, localGame]);
+  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver(), [gameOverState, game]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    const currentTurn = localGame.turn();
+    const currentTurn = game.turn();
     if (finalGameOver || currentTurn !== playerColor) return false;
 
     // Create a temporary game state to validate the move
-    const tempGame = new Chess(localGame.fen());
+    const tempGame = new Chess(game.fen());
     const result = tempGame.move(move);
 
     if (!result) {
@@ -254,7 +262,7 @@ function GamePageContent() {
     const newFen = tempGame.fen();
     
     if (isBotGame) {
-      setLocalGame(tempGame);
+      setBotGameFen(newFen);
       setLastMove({ from: result.from, to: result.to });
       if (!tempGame.isGameOver() && engine.current) {
         engine.current.postMessage(`position fen ${newFen}`);
@@ -354,7 +362,7 @@ function GamePageContent() {
 
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
-  const currentTurn = localGame.turn();
+  const currentTurn = game.turn();
   const drawOfferedToMe = gameData?.drawOffer === opponentColor;
 
   if (isGameLoading || arePlayersLoading) {
@@ -379,7 +387,7 @@ function GamePageContent() {
           )}
           <div className="relative">
             <Chessboard 
-              fen={localGame.fen()}
+              fen={game.fen()}
               onMove={makeMove}
               gameStarted={gameStarted}
               isEngineLoading={isEngineLoading}
