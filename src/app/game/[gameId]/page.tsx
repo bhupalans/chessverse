@@ -11,11 +11,12 @@ import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
-import { useUser, useRealtimeDB } from '@/firebase';
-import type { User as UserType } from '@/lib/types';
+import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import type { User as UserType, Game as GameType } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
 import { ref, onValue } from 'firebase/database';
+import { doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 
@@ -34,10 +35,18 @@ function GamePageContent() {
   const isBotGame = playMode === 'bot';
 
   const realtimeDB = useRealtimeDB();
+  const firestore = useFirestore();
   const { user } = useUser();
   
-  const [gameData, setGameData] = useState<{fen: string; turn: string} | null>(null);
+  const [liveGameState, setLiveGameState] = useState<{fen: string; turn: string} | null>(null);
   const [isGameLoading, setIsGameLoading] = useState(!isBotGame);
+
+  const gameDocRef = useMemoFirebase(() => {
+    if (isBotGame || !gameId || !firestore) return null;
+    return doc(firestore, 'games', gameId);
+  }, [firestore, gameId, isBotGame]);
+
+  const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
 
   const [botGameFen, setBotGameFen] = useState(() => new Chess().fen());
   const [gameStarted, setGameStarted] = useState(false);
@@ -49,10 +58,6 @@ function GamePageContent() {
   const { toast } = useToast();
   const engine = useRef<any>(null);
   const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
-
-  // This data will eventually come from the game object in a different way, not Firestore
-  const whitePlayerData: UserType | null = {id: '1', username: "Player 1", email: '', eloRating: 1200, onlineStatus: 'online', completedGames: 0};
-  const blackPlayerData: UserType | null = {id: '2', username: "Player 2", email: '', eloRating: 1200, onlineStatus: 'online', completedGames: 0};
   
   useEffect(() => {
     if (isBotGame || !realtimeDB || !gameId) return;
@@ -63,12 +68,15 @@ function GamePageContent() {
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        setGameData(data);
+        setLiveGameState(data);
+      } else if (!isFirestoreGameLoading && firestoreGame?.status !== 'inprogress') {
+         // It might be a new game that hasn't been initialized in RTDB yet.
+         setLiveGameState({ fen: new Chess().fen(), turn: 'w'});
       } else {
         toast({
           variant: 'destructive',
           title: 'Game not found',
-          description: `Could not load game with ID: ${gameId}`
+          description: `Could not load live game with ID: ${gameId}`
         });
       }
       setIsGameLoading(false);
@@ -83,16 +91,16 @@ function GamePageContent() {
     });
 
     return () => unsubscribe();
-  }, [realtimeDB, gameId, isBotGame, toast]);
+  }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading]);
 
   const playerColor = useMemo<Color>(() => {
-    // For now, player is always white. This will be updated with real user data.
-    return 'w';
-  }, []);
+    if (isBotGame || !user || !firestoreGame) return 'w';
+    return firestoreGame.player1Id === user.uid ? 'w' : 'b';
+  }, [user, firestoreGame, isBotGame]);
 
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
   
-  const gameFen = isBotGame ? botGameFen : gameData?.fen;
+  const gameFen = isBotGame ? botGameFen : liveGameState?.fen;
   
   const game = useMemo(() => {
     if (!gameFen) return new Chess();
@@ -131,6 +139,18 @@ function GamePageContent() {
     }
   }, []);
 
+  const { whitePlayer, blackPlayer, isLoading: arePlayersLoading } = useMemo(() => {
+    if (isBotGame) {
+      const humanPlayer = { id: user?.uid || 'human', username: user?.displayName || 'You', eloRating: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
+      const botPlayer = { id: 'bot', username: 'Stockfish Bot', eloRating: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
+      return { whitePlayer: humanPlayer, blackPlayer: botPlayer, isLoading: false };
+    }
+    if (isFirestoreGameLoading || !firestoreGame) {
+      return { whitePlayer: null, blackPlayer: null, isLoading: true };
+    }
+    return { whitePlayer: firestoreGame.player1, blackPlayer: firestoreGame.player2, isLoading: false };
+  }, [isBotGame, firestoreGame, isFirestoreGameLoading, user]);
+
   const handleGameOver = useCallback((reason: string, winner?: 'w' | 'b' | 'd') => {
       playSound('game-end');
       const winnerData = winner || (game.turn() === 'b' ? 'w' : 'b');
@@ -142,23 +162,23 @@ function GamePageContent() {
       if (winnerData !== 'd') {
           if (isBotGame) {
               winnerName = winnerData === playerColor ? (user?.displayName || 'You') : 'Stockfish Bot';
-          } else if (whitePlayerData && blackPlayerData) {
+          } else if (whitePlayer && blackPlayer) {
               if (winnerData === 'w') {
-                  winnerName = whitePlayerData.username;
+                  winnerName = whitePlayer.username;
               } else {
-                  winnerName = blackPlayerData.username;
+                  winnerName = blackPlayer.username;
               }
           }
       }
       if (!gameOverState) {
         setGameOverState({ winner: winnerName, reason });
       }
-  }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameOverState]);
+  }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayer, blackPlayer, gameOverState]);
   
   useEffect(() => {
-    if (isBotGame || !gameData) return;
+    if (isBotGame || !liveGameState) return;
 
-    const newGame = new Chess(gameData.fen);
+    const newGame = new Chess(liveGameState.fen);
     const history = newGame.history({ verbose: true });
     
     if (history.length > 0) {
@@ -174,12 +194,12 @@ function GamePageContent() {
       setLastMove(null);
     }
     
-    if (!gameStarted) {
+    if (!gameStarted && firestoreGame?.status === 'inprogress') {
       setGameStarted(true);
     }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameData, isBotGame]);
+  }, [liveGameState, isBotGame, firestoreGame]);
 
 
   const engineGo = useCallback(() => {
@@ -303,7 +323,7 @@ function GamePageContent() {
   const handleResign = () => {
     if (finalGameOver) return;
     const winnerId = opponentColor;
-    const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayerData?.username : whitePlayerData?.username) || 'Opponent';
+    const opponentName = isBotGame ? 'Stockfish Bot' : (playerColor === 'w' ? blackPlayer?.username : whitePlayer?.username) || 'Opponent';
     handleGameOver(`You have resigned. ${opponentName} wins.`, winnerId);
   };
 
@@ -328,20 +348,6 @@ function GamePageContent() {
        setLastMove(null);
      }
   };
-  
-  const botPlayer = { id: 'bot', username: 'Stockfish Bot', eloRating: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
-  const humanPlayer = { id: user?.uid || 'human', username: user?.displayName || 'You', eloRating: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
-  
-  const { whitePlayer, blackPlayer, isLoading: arePlayersLoading } = useMemo(() => {
-    if (isBotGame) {
-      return { whitePlayer: humanPlayer, blackPlayer: botPlayer, isLoading: false };
-    }
-    if (!whitePlayerData || !blackPlayerData) {
-      return { whitePlayer: null, blackPlayer: null, isLoading: true };
-    }
-    return { whitePlayer: whitePlayerData, blackPlayer: blackPlayerData, isLoading: false };
-  }, [isBotGame, whitePlayerData, blackPlayerData, humanPlayer, botPlayer]);
-
 
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
@@ -351,7 +357,7 @@ function GamePageContent() {
   if (isGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
-   if (!gameData && !isBotGame) {
+   if (!liveGameState && !isBotGame) {
     return <div className="flex h-full items-center justify-center">Game not found.</div>;
   }
 
@@ -416,6 +422,14 @@ function GamePageContent() {
                     <div className="text-white text-lg">Loading Engine...</div>
                 </div>
              )}
+             {!gameStarted && !isBotGame && firestoreGame?.status === 'waiting' &&(
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                    <div className="text-white text-lg text-center p-4">
+                        <p>Waiting for an opponent...</p>
+                        <p className="text-sm text-muted-foreground mt-2">The game will start once someone joins.</p>
+                    </div>
+                </div>
+             )}
           </div>
           {bottomPlayer && (
              <PlayerCard 
@@ -465,3 +479,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    

@@ -33,12 +33,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.submitMove = void 0;
+exports.initializeLiveGame = exports.submitMove = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const chess_js_1 = require("chess.js");
 admin.initializeApp();
 const db = admin.database();
+//const firestore = admin.firestore();
 exports.submitMove = functions.https.onCall(async (data, context) => {
     // Ensure the user is authenticated
     if (!context.auth) {
@@ -76,5 +77,33 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         console.error('Error processing move:', error);
         throw new functions.https.HttpsError('internal', 'An internal error occurred while processing the move.');
     }
+});
+exports.initializeLiveGame = functions.firestore
+    .document('/games/{gameId}')
+    .onWrite(async (change, context) => {
+    const gameId = context.params.gameId;
+    const afterData = change.after.data();
+    // If the document was deleted or status is not 'inprogress', do nothing.
+    if (!afterData || afterData.status !== 'inprogress') {
+        return null;
+    }
+    const beforeData = change.before.data();
+    // Only initialize if the status just changed to 'inprogress' or if it's a new 'inprogress' game
+    if ((beforeData === null || beforeData === void 0 ? void 0 : beforeData.status) === 'inprogress') {
+        return null;
+    }
+    const liveGameRef = db.ref(`liveGames/${gameId}`);
+    const snapshot = await liveGameRef.once('value');
+    // Only create if it doesn't already exist to prevent overwriting ongoing games
+    if (snapshot.exists()) {
+        console.log(`Live game at /liveGames/${gameId} already exists. Skipping initialization.`);
+        return null;
+    }
+    const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+    console.log(`Initializing live game at /liveGames/${gameId}`);
+    return liveGameRef.set({
+        fen: startingFen,
+        turn: 'w'
+    });
 });
 //# sourceMappingURL=index.js.map

@@ -5,7 +5,7 @@ import { Chess } from 'chess.js';
 admin.initializeApp();
 
 const db = admin.database();
-const firestore = admin.firestore();
+//const firestore = admin.firestore();
 
 export const submitMove = functions.https.onCall(async (data, context) => {
     // Ensure the user is authenticated
