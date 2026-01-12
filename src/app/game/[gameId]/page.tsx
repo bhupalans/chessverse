@@ -159,7 +159,8 @@ function GamePageContent() {
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
       handleGameOver(reason, gameData.winnerId);
     }
-  }, [gameData, playSound]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameData]);
 
 
   const engineGo = useCallback(() => {
@@ -223,7 +224,7 @@ function GamePageContent() {
         }
       };
     }
-  }, [isBotGame, localGame.fen(), opponentColor, playSound, handleGameOver]);
+  }, [isBotGame, localGame, opponentColor, playSound, handleGameOver]);
 
   const finalGameOver = useMemo(() => !!gameOverState || gameData?.status === 'completed' || localGame.isGameOver(), [gameOverState, gameData, localGame]);
 
@@ -470,3 +471,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    
