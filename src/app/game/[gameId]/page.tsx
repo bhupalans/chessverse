@@ -126,31 +126,31 @@ function GamePageContent() {
   }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData]);
 
   useEffect(() => {
-    if (gameData?.fen) {
-      if (fen !== gameData.fen) {
-        const newGame = new Chess(gameData.fen);
-        setLocalGame(newGame);
-        setFen(gameData.fen);
+    if (gameData && gameData.fen && gameData.fen !== fen) {
+      const newGame = new Chess(gameData.fen);
+      setLocalGame(newGame);
+      setFen(gameData.fen);
 
-        const history = newGame.history({ verbose: true });
-        if (history.length > 0) {
-          const lastHistoryMove = history[history.length - 1];
-          setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-          if (newGame.inCheck()) playSound('check');
-          else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-          else playSound('move');
-        }
+      const history = newGame.history({ verbose: true });
+      if (history.length > 0) {
+        const lastHistoryMove = history[history.length - 1];
+        setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+        if (newGame.inCheck()) playSound('check');
+        else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+        else playSound('move');
       }
     }
+
     if (gameData?.status === 'inprogress' && !gameStarted) {
       setGameStarted(true);
     }
+
     if (gameData?.status === 'completed' && gameData.winner && !gameOverState) {
-        let reason = 'Checkmate!';
-        if (gameData.reason === 'draw') reason = 'Draw by agreement';
-        else if(gameData.reason === 'resign') reason = 'Resignation';
-        else if(gameData.reason === 'stalemate') reason = 'Stalemate';
-        handleGameOver(reason, gameData.winner);
+      let reason = 'Checkmate!';
+      if (gameData.reason === 'draw') reason = 'Draw by agreement';
+      else if(gameData.reason === 'resign') reason = 'Resignation';
+      else if(gameData.reason === 'stalemate') reason = 'Stalemate';
+      handleGameOver(reason, gameData.winner);
     }
   }, [gameData, fen, playSound, gameStarted, gameOverState, handleGameOver]);
 
@@ -463,5 +463,7 @@ export default function GamePage() {
   );
 }
 
+
+    
 
     
