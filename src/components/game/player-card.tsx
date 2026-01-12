@@ -80,5 +80,3 @@ export const PlayerCard = ({
     </div>
   );
 };
-
-    
