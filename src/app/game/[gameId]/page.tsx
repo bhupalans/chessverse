@@ -128,11 +128,10 @@ function GamePageContent() {
   
   // Effect to sync local chess instance with remote data
   useEffect(() => {
-    if (isBotGame || !gameData) return;
+    if (isBotGame || !gameData || !gameData.fen) return;
 
-    const newGame = new Chess(gameData.fen);
     const oldTurn = localGame.turn();
-
+    const newGame = new Chess(gameData.fen);
     setLocalGame(newGame);
 
     const history = newGame.history({ verbose: true });
@@ -153,7 +152,7 @@ function GamePageContent() {
       setGameStarted(true);
     }
 
-    if (gameData?.status === 'completed' && gameData.winnerId && !gameOverState) {
+    if (gameData?.status === 'completed' && !gameOverState) {
       let reason = 'Checkmate!';
       if (gameData.reason === 'draw') reason = 'Draw by agreement';
       else if(gameData.reason === 'resign') reason = 'Resignation';
@@ -233,84 +232,67 @@ function GamePageContent() {
     const currentTurn = localGame.turn();
     if (finalGameOver || currentTurn !== playerColor) return false;
 
-    try {
-      const tempGame = new Chess(localGame.fen());
-      const result = tempGame.move(move);
-      
-      if (result) {
-        if (result.flags.includes('c')) playSound('capture');
-        else playSound('move');
-        if (tempGame.inCheck()) playSound('check');
+    // Create a temporary game state to validate the move
+    const tempGame = new Chess(localGame.fen());
+    const result = tempGame.move(move);
 
-        const newFen = tempGame.fen();
-        
-        const updatePayload: Partial<GameType> & DocumentData = {
-            fen: newFen,
-            turn: tempGame.turn(),
-            moves: [...(gameData?.moves || []), result.san]
-        };
-
-        if (tempGame.isGameOver()) {
-          updatePayload.status = 'completed';
-          let reason: GameType['reason'] = 'checkmate';
-          let winnerId: GameType['winnerId'] = 'd';
-
-          if (tempGame.isCheckmate()) {
-            reason = 'checkmate';
-            winnerId = tempGame.turn() === 'w' ? 'b' : 'w';
-          } else if (tempGame.isStalemate()){
-            reason = 'stalemate';
-            winnerId = 'd';
-          } else if (tempGame.isDraw()) {
-            reason = 'draw';
-            winnerId = 'd';
-          }
-          
-          updatePayload.winnerId = winnerId;
-          updatePayload.reason = reason;
-          // Let the useEffect handle the gameOver state update from the db
-        }
-        
-        if (!isBotGame && gameRef) {
-          // This update will trigger the useEffect hook for all clients
-          updateDocumentNonBlocking(gameRef, updatePayload);
-        } else if (isBotGame) {
-           const newGame = new Chess(newFen);
-           setLocalGame(newGame);
-           setLastMove({ from: result.from, to: result.to });
-           if (!tempGame.isGameOver() && engine.current) {
-             engine.current.postMessage(`position fen ${newFen}`);
-             setTimeout(engineGo, 200);
-           } else if (tempGame.isGameOver()) {
-              if (tempGame.isCheckmate()) {
-                handleGameOver('Checkmate!', playerColor);
-              } else if (tempGame.isStalemate()) {
-                handleGameOver('Stalemate', 'd');
-              } else if (tempGame.isDraw()) {
-                handleGameOver('Draw', 'd');
-              }
-           }
-        }
-        return true;
-
-      } else {
-        playSound('illegal');
-        toast({
-          variant: 'destructive',
-          title: 'Invalid Move',
-          description: 'You cannot move the piece to that square.',
-        });
-        return false;
-      }
-    } catch (e: any) {
-       playSound('illegal');
-       toast({
-          variant: 'destructive',
-          title: 'Invalid Move',
-          description: e.message || 'The move is not allowed.',
-        });
-       return false;
+    if (!result) {
+      playSound('illegal');
+      toast({
+        variant: 'destructive',
+        title: 'Invalid Move',
+        description: 'You cannot move the piece to that square.',
+      });
+      return false;
     }
+
+    // If the move is valid, play sounds and update the database
+    if (result.flags.includes('c')) playSound('capture');
+    else playSound('move');
+    if (tempGame.inCheck()) playSound('check');
+
+    const newFen = tempGame.fen();
+    
+    if (isBotGame) {
+      setLocalGame(tempGame);
+      setLastMove({ from: result.from, to: result.to });
+      if (!tempGame.isGameOver() && engine.current) {
+        engine.current.postMessage(`position fen ${newFen}`);
+        setTimeout(engineGo, 200);
+      } else if (tempGame.isGameOver()) {
+        if (tempGame.isCheckmate()) handleGameOver('Checkmate!', playerColor);
+        else if (tempGame.isStalemate()) handleGameOver('Stalemate', 'd');
+        else if (tempGame.isDraw()) handleGameOver('Draw', 'd');
+      }
+    } else if (gameRef) {
+      // For online games, just update the database. The useEffect will handle the local state update.
+      const updatePayload: Partial<GameType> & DocumentData = {
+        fen: newFen,
+        turn: tempGame.turn(),
+        moves: [...(gameData?.moves || []), result.san]
+      };
+
+      if (tempGame.isGameOver()) {
+        updatePayload.status = 'completed';
+        let reason: GameType['reason'] = 'checkmate';
+        let winnerId: GameType['winnerId'] = tempGame.turn() === 'w' ? 'b' : 'w';
+
+        if (tempGame.isStalemate()) {
+          reason = 'stalemate';
+          winnerId = 'd';
+        } else if (tempGame.isDraw()) {
+          reason = 'draw';
+          winnerId = 'd';
+        }
+        
+        updatePayload.winnerId = winnerId;
+        updatePayload.reason = reason;
+      }
+      
+      updateDocumentNonBlocking(gameRef, updatePayload);
+    }
+    
+    return true;
   };
 
   const handleResign = () => {
