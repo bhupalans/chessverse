@@ -1,0 +1,64 @@
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import { Chess } from 'chess.js';
+
+admin.initializeApp();
+
+const db = admin.database();
+
+export const submitMove = functions.https.onCall(async (data, context) => {
+    // Ensure the user is authenticated
+    if (!context.auth) {
+        throw new functions.https.HttpsError(
+            'unauthenticated',
+            'The function must be called while authenticated.'
+        );
+    }
+
+    const { gameId, from, to, promotion } = data;
+
+    if (!gameId || !from || !to) {
+        throw new functions.https.HttpsError(
+            'invalid-argument',
+            'The function must be called with "gameId", "from", and "to" arguments.'
+        );
+    }
+
+    const gameRef = db.ref(`/liveGames/${gameId}`);
+
+    try {
+        const snapshot = await gameRef.once('value');
+        const gameData = snapshot.val();
+
+        if (!gameData) {
+            throw new functions.https.HttpsError('not-found', 'Game not found.');
+        }
+
+        const game = new Chess(gameData.fen);
+        
+        // TODO: Add logic to verify that the player making the move is the correct one based on `context.auth.uid`
+
+        if (game.turn() !== gameData.turn) {
+             throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
+        }
+
+        const move = game.move({ from, to, promotion });
+
+        if (move === null) {
+            throw new functions.https.HttpsError('invalid-argument', 'Illegal move.');
+        }
+
+        const newFen = game.fen();
+        const newTurn = game.turn();
+
+        await gameRef.update({ fen: newFen, turn: newTurn });
+
+        return { status: 'success', fen: newFen, turn: newTurn };
+    } catch (error: any) {
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        console.error('Error processing move:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred while processing the move.');
+    }
+});

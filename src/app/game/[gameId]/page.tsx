@@ -16,6 +16,7 @@ import type { User as UserType } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
 import { ref, onValue } from 'firebase/database';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 
 declare global {
@@ -246,13 +247,57 @@ function GamePageContent() {
 
   const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver(), [gameOverState, game]);
 
-  const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    // Read only for now as per instructions
-    toast({
-      title: 'Read-only Mode',
-      description: 'The board is currently in read-only mode.',
-    });
-    return false;
+  const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
+    if (isBotGame) {
+      // Logic for making a move in a bot game
+      const tempGame = new Chess(gameFen);
+      const moveResult = tempGame.move(move);
+
+      if (moveResult) {
+        if (moveResult.flags.includes('c')) playSound('capture');
+        else playSound('move');
+        if (tempGame.inCheck()) playSound('check');
+        
+        setLastMove({ from: moveResult.from, to: moveResult.to });
+        setBotGameFen(tempGame.fen());
+        
+        if (tempGame.isGameOver()) {
+           if(tempGame.isCheckmate()){
+             handleGameOver('Checkmate!', tempGame.turn() === 'w' ? 'b' : 'w');
+           } else if (tempGame.isStalemate()) {
+             handleGameOver('Stalemate', 'd');
+           } else if (tempGame.isDraw()) {
+             handleGameOver('Draw', 'd');
+           }
+        } else {
+          // Trigger bot move
+          engine.current.postMessage(`position fen ${tempGame.fen()}`);
+          engineGo();
+        }
+        return true;
+      } else {
+        playSound('illegal');
+        toast({ title: 'Invalid move' });
+        return false;
+      }
+    } else {
+      // Logic for making a move in a player vs player game
+      try {
+        const functions = getFunctions();
+        const submitMove = httpsCallable(functions, 'submitMove');
+        await submitMove({ gameId, from: move.from, to: move.to, promotion: move.promotion });
+        return true;
+      } catch (error: any) {
+        console.error('Error submitting move:', error);
+        playSound('illegal');
+        toast({
+          variant: 'destructive',
+          title: 'Invalid Move',
+          description: error.message || 'The move is not allowed.',
+        });
+        return false;
+      }
+    }
   };
 
   const handleResign = () => {
