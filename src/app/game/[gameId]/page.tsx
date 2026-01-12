@@ -159,7 +159,7 @@ function GamePageContent() {
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
       handleGameOver(reason, gameData.winnerId);
     }
-  }, [gameData, playSound, gameStarted, gameOverState, handleGameOver]);
+  }, [gameData, playSound]);
 
 
   const engineGo = useCallback(() => {
@@ -223,7 +223,7 @@ function GamePageContent() {
         }
       };
     }
-  }, [isBotGame, localGame, opponentColor, playSound, handleGameOver]);
+  }, [isBotGame, localGame.fen(), opponentColor, playSound, handleGameOver]);
 
   const finalGameOver = useMemo(() => !!gameOverState || gameData?.status === 'completed' || localGame.isGameOver(), [gameOverState, gameData, localGame]);
 
