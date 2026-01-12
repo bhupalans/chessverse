@@ -141,16 +141,18 @@ export const initializeLiveGame = functions.firestore
     .onWrite(async (change, context) => {
         const gameId = context.params.gameId;
         const afterData = change.after.data();
+        const beforeData = change.before.data();
 
-        // If the document was deleted or status is not 'inprogress', do nothing.
+        console.log(`initializeLiveGame fired for game: ${gameId}`);
+
+        // If the game is deleted, or not in progress, do nothing
         if (!afterData || afterData.status !== 'inprogress') {
             return null;
         }
         
-        const beforeData = change.before.data();
-        
-        // Only initialize if the status just changed to 'inprogress' or if it's a new 'inprogress' game
+        // Only initialize if the status *just* changed to 'inprogress'
         if (beforeData?.status === 'inprogress') {
+            console.log(`Game ${gameId} is already in progress. Skipping initialization.`);
             return null;
         }
 
@@ -170,17 +172,24 @@ export const initializeLiveGame = functions.firestore
             turn: 'w'
         };
 
-        if (afterData.timeControl && afterData.timeControl.initial) {
-            console.log(`Initializing clocks with ${afterData.timeControl.initial} seconds.`);
+        // Initialize clocks if time control is set
+        const timeControl = afterData.timeControl;
+        console.log(`timeControl for game ${gameId}:`, timeControl);
+
+        if (timeControl && timeControl.initial) {
             liveGameState.clocks = {
-                white: afterData.timeControl.initial,
-                black: afterData.timeControl.initial,
+                white: timeControl.initial,
+                black: timeControl.initial,
+                running: 'w',
                 lastTick: admin.database.ServerValue.TIMESTAMP
             };
+            console.log(`Clocks initialized for game ${gameId} with ${timeControl.initial} seconds.`);
         }
 
         console.log(`Initializing live game at /liveGames/${gameId}`);
-        return liveGameRef.set(liveGameState);
+        await liveGameRef.set(liveGameState);
+        console.log(`Clocks written for game ${gameId}`);
+        return null;
     });
 
 export const handleGameAction = functions.https.onCall(async (data, context) => {
@@ -286,3 +295,5 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
+
+    
