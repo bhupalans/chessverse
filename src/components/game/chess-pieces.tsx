@@ -1,3 +1,4 @@
+
 'use client';
 import { useState, useMemo } from 'react';
 import { Chess, type Square as ChessJsSquare, type Color, type Piece } from 'chess.js';
@@ -34,7 +35,15 @@ export function ChessPieces({
   const { toast } = useToast();
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
 
-  const game = useMemo(() => new Chess(fen), [fen]);
+  const game = useMemo(() => {
+    try {
+      return new Chess(fen);
+    } catch(e) {
+      console.error("Invalid FEN in ChessPieces", fen, e);
+      return new Chess(); // Return a default board on error
+    }
+  }, [fen]);
+
   const board = useMemo(() => {
     const b = game.board();
     return playerColor === 'w' ? b : b.slice().reverse().map(row => row.slice().reverse());
@@ -59,10 +68,10 @@ export function ChessPieces({
   };
 
   const handleBoardClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!gameStarted && !isGameOver) {
+    if (!gameStarted) {
       toast({
         title: 'Game Not Started',
-        description: 'The game will begin when both players are ready.',
+        description: 'The game has not started yet.',
       });
       return;
     }
@@ -82,12 +91,19 @@ export function ChessPieces({
     const square = getSquareFromEvent(e);
 
     if (selectedSquare) {
-      onMove({
+      const isMoveSuccessful = onMove({
         from: selectedSquare,
         to: square,
-        promotion: 'q',
+        promotion: 'q', // Always promote to queen for simplicity
       });
+      
+      // Only clear selection if the move was successful or it was an attempt to move
+      // If the click was on an empty square or opponent piece, the parent (onMove) handles it
+      // if (!isMoveSuccessful) {
+        // Maybe provide feedback about invalid move
+      // }
       setSelectedSquare(null);
+
     } else {
       const piece = game.get(square);
       if (piece && piece.color === playerColor) {
@@ -113,7 +129,11 @@ export function ChessPieces({
 
   return (
     <div 
-      className={cn("absolute inset-0", (isGameOver || !gameStarted) && "opacity-70", (gameStarted && !isGameOver) && 'cursor-pointer')}
+      className={cn(
+        "absolute inset-0", 
+        !gameStarted && "opacity-70",
+        (gameStarted && !isGameOver && turn === playerColor) && 'cursor-pointer'
+      )}
       onClick={handleBoardClick}
     >
       <div className="relative w-full h-full">
@@ -130,7 +150,7 @@ export function ChessPieces({
         })}
         
         {/* Render pieces */}
-        {board.flat().filter(p => p !== null).map((piece, index) => {
+        {board.flat().filter(p => p !== null).map((piece) => {
           if (!piece) return null;
           const { row, col } = getSquareCoords(piece.square);
           

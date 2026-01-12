@@ -1,4 +1,5 @@
 
+
 export type Player = {
   id: string;
   username: string;
@@ -9,9 +10,11 @@ export type Player = {
 export type User = {
   id: string;
   username: string;
+  email: string;
   avatarUrl?: string;
   eloRating: number;
   onlineStatus: 'online' | 'offline';
+  completedGames: number;
 };
 
 export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';

@@ -4,7 +4,6 @@
 import { ThemeProvider } from '@/context/theme-context';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import dynamic from 'next/dynamic';
 import { Chess, type Square as ChessJsSquare, type Color, type Move } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
