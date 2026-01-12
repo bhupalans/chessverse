@@ -44,7 +44,7 @@ function GamePageContent() {
   const gameRef = useMemoFirebase(() => firestore && gameId ? doc(firestore, 'games', gameId) : null, [firestore, gameId]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
 
-  const localGame = useMemo(() => new Chess(), []);
+  const [localGame, setLocalGame] = useState(() => new Chess());
   const [fen, setFen] = useState('start');
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
@@ -92,7 +92,6 @@ function GamePageContent() {
     }
   }, []);
 
-
   const handleGameOver = useCallback((reason: string, winner?: 'w' | 'b' | 'd') => {
       playSound('game-end');
       const winnerData = winner || (localGame.turn() === 'b' ? 'w' : 'b');
@@ -118,15 +117,17 @@ function GamePageContent() {
 
   useEffect(() => {
     if (gameData?.fen) {
-      if (localGame.fen() !== gameData.fen) {
-        localGame.load(gameData.fen);
-        setFen(localGame.fen());
-        
-        const history = localGame.history({ verbose: true });
+      // Logic to handle incoming game state from Firestore
+      if (fen !== gameData.fen) {
+        const newGame = new Chess(gameData.fen);
+        setLocalGame(newGame);
+        setFen(gameData.fen);
+
+        const history = newGame.history({ verbose: true });
         if (history.length > 0) {
           const lastHistoryMove = history[history.length - 1];
           setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-          if(localGame.inCheck()) playSound('check');
+          if (newGame.inCheck()) playSound('check');
         }
       }
     }
@@ -140,7 +141,7 @@ function GamePageContent() {
         else if(gameData.reason === 'stalemate') reason = 'Stalemate';
         handleGameOver(reason, gameData.winner);
     }
-  }, [gameData, localGame, handleGameOver, gameOverState, playSound, gameStarted]);
+  }, [gameData, fen, playSound, gameStarted, gameOverState, handleGameOver]);
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -161,23 +162,27 @@ function GamePageContent() {
               if (e.data?.startsWith('bestmove')) {
                 const bestMove = e.data.split(' ')[1];
                 if (bestMove && localGame.turn() === opponentColor) {
-                  const moveResult = localGame.move(bestMove, { sloppy: true });
+                  const tempGame = new Chess(localGame.fen());
+                  const moveResult = tempGame.move(bestMove, { sloppy: true });
+
                   if (moveResult) {
                     if (moveResult.flags.includes('c')) playSound('capture');
                     else playSound('move');
-                    if (localGame.inCheck()) playSound('check');
+                    if (tempGame.inCheck()) playSound('check');
                     setLastMove({ from: moveResult.from, to: moveResult.to });
-                  }
-                  setFen(localGame.fen());
-                  if (localGame.isGameOver()) {
-                    if(localGame.isCheckmate()){
-                       handleGameOver('Checkmate!');
-                    } else if (localGame.isStalemate()) {
-                       handleGameOver('Stalemate', 'd');
-                    } else if (localGame.isDraw()) {
-                       handleGameOver('Draw', 'd');
-                    } else {
-                       handleGameOver('Game Over');
+                    setLocalGame(tempGame);
+                    setFen(tempGame.fen());
+
+                    if (tempGame.isGameOver()) {
+                      if(tempGame.isCheckmate()){
+                         handleGameOver('Checkmate!');
+                      } else if (tempGame.isStalemate()) {
+                         handleGameOver('Stalemate', 'd');
+                      } else if (tempGame.isDraw()) {
+                         handleGameOver('Draw', 'd');
+                      } else {
+                         handleGameOver('Game Over');
+                      }
                     }
                   }
                 }
@@ -250,7 +255,8 @@ function GamePageContent() {
         if (!isBotGame && gameRef) {
           updateDocumentNonBlocking(gameRef, updatePayload);
         } else if (isBotGame) {
-           localGame.load(newFen);
+           const newGame = new Chess(newFen);
+           setLocalGame(newGame);
            setFen(newFen);
            if (!tempGame.isGameOver() && engine.current) {
              engine.current.postMessage(`position fen ${newFen}`);
@@ -331,6 +337,7 @@ function GamePageContent() {
     whitePlayer = humanPlayer;
     blackPlayer = botPlayer;
   } else if (gameData?.player1 && gameData?.player2) {
+      // Definitive check to assign white and black players correctly
       if (gameData.player1.id === gameData.player1Id) {
         whitePlayer = gameData.player1;
         blackPlayer = gameData.player2;
@@ -339,9 +346,11 @@ function GamePageContent() {
         blackPlayer = gameData.player1;
       }
   } else if (gameData?.player1) {
+    // If only one player is present, they must be white
     whitePlayer = gameData.player1;
     blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   } else {
+     // Placeholder for loading state
      whitePlayer = { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
      blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   }
