@@ -2,6 +2,7 @@ import type { PieceComponent } from './types';
 import { ClassicChessPieces } from '@/components/icons/chess-pieces/classic';
 import { ModernChessPieces } from '@/components/icons/chess-pieces/modern';
 import { AlphaChessPieces } from '@/components/icons/chess-pieces/alpha';
+import { NeoChessPieces } from '@/components/icons/chess-pieces/neo';
 
 export type PieceSet = {
   id: string;
@@ -10,6 +11,11 @@ export type PieceSet = {
 };
 
 export const PIECE_SETS: PieceSet[] = [
+  {
+    id: 'neo',
+    name: 'Neo',
+    component: NeoChessPieces,
+  },
   {
     id: 'classic',
     name: 'Classic',
