@@ -97,7 +97,9 @@ function GamePageContent() {
       playSound('game-end');
       const winnerData = winner || (localGame.turn() === 'b' ? 'w' : 'b');
       setWinnerColor(winnerData);
-      findKingPositions(localGame);
+      
+      const tempGame = new Chess(localGame.fen());
+      findKingPositions(tempGame);
 
       let winnerName = 'draw';
       if (winnerData !== 'd') {
@@ -116,19 +118,19 @@ function GamePageContent() {
 
   useEffect(() => {
     if (gameData?.fen) {
-      if(localGame.fen() !== gameData.fen) {
-        const oldFen = localGame.fen();
+      if (localGame.fen() !== gameData.fen) {
         localGame.load(gameData.fen);
         setFen(localGame.fen());
         
         const history = localGame.history({ verbose: true });
-        if(history.length > 0) {
-            const lastHistoryMove = history[history.length - 1];
-            setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+        if (history.length > 0) {
+          const lastHistoryMove = history[history.length - 1];
+          setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+          if(localGame.inCheck()) playSound('check');
         }
       }
     }
-    if (gameData?.status === 'inprogress') {
+    if (gameData?.status === 'inprogress' && !gameStarted) {
       setGameStarted(true);
     }
     if (gameData?.status === 'completed' && gameData.winner && !gameOverState) {
@@ -138,7 +140,7 @@ function GamePageContent() {
         else if(gameData.reason === 'stalemate') reason = 'Stalemate';
         handleGameOver(reason, gameData.winner);
     }
-  }, [gameData, localGame, handleGameOver, gameOverState]);
+  }, [gameData, localGame, handleGameOver, gameOverState, playSound, gameStarted]);
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -329,16 +331,19 @@ function GamePageContent() {
     whitePlayer = humanPlayer;
     blackPlayer = botPlayer;
   } else if (gameData?.player1 && gameData?.player2) {
-    if (gameData.player1.id === gameData.player1Id) {
-      whitePlayer = gameData.player1;
-      blackPlayer = gameData.player2;
-    } else {
-      whitePlayer = gameData.player2;
-      blackPlayer = gameData.player1;
-    }
+      if (gameData.player1.id === gameData.player1Id) {
+        whitePlayer = gameData.player1;
+        blackPlayer = gameData.player2;
+      } else {
+        whitePlayer = gameData.player2;
+        blackPlayer = gameData.player1;
+      }
+  } else if (gameData?.player1) {
+    whitePlayer = gameData.player1;
+    blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   } else {
-     whitePlayer = gameData?.player1 || { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
-     blackPlayer = gameData?.player2 || { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
+     whitePlayer = { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
+     blackPlayer = { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   }
 
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
@@ -449,7 +454,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    
-
-    
