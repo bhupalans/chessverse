@@ -44,18 +44,17 @@ function GamePageContent() {
   
   const gameRef = useMemoFirebase(() => firestore && gameId ? doc(firestore, 'games', gameId) : null, [firestore, gameId]);
   const { data: gameData, isLoading: isGameLoading } = useDoc<GameType>(gameRef);
-
+  
   const whitePlayerId = gameData?.player1Id;
   const blackPlayerId = gameData?.player2Id;
 
   const whitePlayerRef = useMemoFirebase(() => firestore && whitePlayerId ? doc(firestore, 'users', whitePlayerId) : null, [firestore, whitePlayerId]);
-  const { data: whitePlayerData, isLoading: isWhitePlayerLoading } = useDoc<UserType>(whitePlayerRef);
+  const { data: whitePlayerData } = useDoc<UserType>(whitePlayerRef);
   
   const blackPlayerRef = useMemoFirebase(() => firestore && blackPlayerId ? doc(firestore, 'users', blackPlayerId) : null, [firestore, blackPlayerId]);
-  const { data: blackPlayerData, isLoading: isBlackPlayerLoading } = useDoc<UserType>(blackPlayerRef);
+  const { data: blackPlayerData } = useDoc<UserType>(blackPlayerRef);
 
   const [localGame, setLocalGame] = useState(() => new Chess());
-  const [fen, setFen] = useState('start');
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
@@ -107,7 +106,7 @@ function GamePageContent() {
       const winnerData = winner || (localGame.turn() === 'b' ? 'w' : 'b');
       setWinnerColor(winnerData);
       
-      const tempGame = new Chess(localGame.fen());
+      const tempGame = new Chess(gameData?.fen || localGame.fen());
       findKingPositions(tempGame);
 
       let winnerName = 'draw';
@@ -123,24 +122,31 @@ function GamePageContent() {
           }
       }
       setGameOverState({ winner: winnerName, reason });
-  }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData]);
-
+  }, [isBotGame, localGame, playerColor, playSound, user, findKingPositions, whitePlayerData, blackPlayerData, gameData]);
+  
+  // Effect to sync local chess instance with remote data
   useEffect(() => {
-    if (gameData && gameData.fen && gameData.fen !== fen) {
+    if (gameData?.fen) {
       const newGame = new Chess(gameData.fen);
       setLocalGame(newGame);
-      setFen(gameData.fen);
-
+      
       const history = newGame.history({ verbose: true });
       if (history.length > 0) {
         const lastHistoryMove = history[history.length - 1];
-        setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
-        if (newGame.inCheck()) playSound('check');
-        else if (lastHistoryMove.flags.includes('c')) playSound('capture');
-        else playSound('move');
+        if (lastHistoryMove.from !== lastMove?.from || lastHistoryMove.to !== lastMove?.to) {
+          setLastMove({ from: lastHistoryMove.from, to: lastHistoryMove.to });
+          
+          // Determine sound based on the move
+          const currentTurn = localGame.turn(); // Turn before this move
+          if (newGame.turn() !== currentTurn) {
+            if (newGame.inCheck()) playSound('check');
+            else if (lastHistoryMove.flags.includes('c')) playSound('capture');
+            else playSound('move');
+          }
+        }
       }
     }
-
+    
     if (gameData?.status === 'inprogress' && !gameStarted) {
       setGameStarted(true);
     }
@@ -152,7 +158,8 @@ function GamePageContent() {
       else if(gameData.reason === 'stalemate') reason = 'Stalemate';
       handleGameOver(reason, gameData.winner);
     }
-  }, [gameData, fen, playSound, gameStarted, gameOverState, handleGameOver]);
+  }, [gameData, playSound, gameStarted, gameOverState, handleGameOver, lastMove, localGame]);
+
 
   const engineGo = useCallback(() => {
     if (engine.current) {
@@ -182,7 +189,6 @@ function GamePageContent() {
                     if (tempGame.inCheck()) playSound('check');
                     setLastMove({ from: moveResult.from, to: moveResult.to });
                     setLocalGame(tempGame);
-                    setFen(tempGame.fen());
 
                     if (tempGame.isGameOver()) {
                       if(tempGame.isCheckmate()){
@@ -221,7 +227,7 @@ function GamePageContent() {
   const finalGameOver = useMemo(() => !!gameOverState || gameData?.status === 'completed' || localGame.isGameOver(), [gameOverState, gameData, localGame]);
 
   const makeMove = (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    const currentTurn = gameData?.turn || localGame.turn();
+    const currentTurn = localGame.turn();
     if (finalGameOver || currentTurn !== playerColor) return false;
 
     try {
@@ -268,7 +274,6 @@ function GamePageContent() {
         } else if (isBotGame) {
            const newGame = new Chess(newFen);
            setLocalGame(newGame);
-           setFen(newFen);
            if (!tempGame.isGameOver() && engine.current) {
              engine.current.postMessage(`position fen ${newFen}`);
              setTimeout(engineGo, 200);
@@ -335,31 +340,30 @@ function GamePageContent() {
   const handleStartGame = () => {
      if(isBotGame) {
        setGameStarted(true);
-       setFen(localGame.fen());
+       setLastMove(null);
      }
   };
   
   const botPlayer = { id: 'bot', username: 'Stockfish Bot', eloRating: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
   const humanPlayer = { id: user?.uid || 'human', username: user?.displayName || 'You', eloRating: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
   
-  let whitePlayer, blackPlayer;
-
-  if (isBotGame) {
-    whitePlayer = humanPlayer;
-    blackPlayer = botPlayer;
-  } else {
-    // If player data is still loading, use placeholders.
-    whitePlayer = whitePlayerData ?? { id: 'p1', username: 'Player 1', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
-    blackPlayer = blackPlayerData ?? { id: 'p2', username: 'Waiting...', eloRating: 1200, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
-  }
+  const { whitePlayer, blackPlayer, isLoading: arePlayersLoading } = useMemo(() => {
+    if (isBotGame) {
+      return { whitePlayer: humanPlayer, blackPlayer: botPlayer, isLoading: false };
+    }
+    if (!whitePlayerData || !blackPlayerData) {
+      return { whitePlayer: null, blackPlayer: null, isLoading: true };
+    }
+    return { whitePlayer: whitePlayerData, blackPlayer: blackPlayerData, isLoading: false };
+  }, [isBotGame, whitePlayerData, blackPlayerData, humanPlayer, botPlayer]);
 
 
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
-  const currentTurn = gameData?.turn || localGame.turn();
+  const currentTurn = localGame.turn();
   const drawOfferedToMe = gameData?.drawOffer === opponentColor;
 
-  if (isGameLoading || (gameId && !isBotGame && (isWhitePlayerLoading || isBlackPlayerLoading))) {
+  if (isGameLoading || arePlayersLoading) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
    if (!gameData && !isBotGame) {
@@ -370,17 +374,19 @@ function GamePageContent() {
     <ThemeProvider>
       <div className="flex h-full flex-col items-center justify-center bg-background p-4 lg:p-8">
         <div className="w-full max-w-lg space-y-4">
-          <PlayerCard 
-            name={topPlayer.username} 
-            elo={topPlayer.eloRating} 
-            avatar={topPlayer.avatarUrl}
-            isBot={isBotGame && topPlayer.id === 'bot'} 
-            isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
-            color={playerColor === 'w' ? 'Black' : 'White'}
-          />
+           {topPlayer && (
+            <PlayerCard 
+              name={topPlayer.username} 
+              elo={topPlayer.eloRating} 
+              avatar={topPlayer.avatarUrl}
+              isBot={isBotGame && topPlayer.id === 'bot'} 
+              isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
+              color={playerColor === 'w' ? 'Black' : 'White'}
+            />
+          )}
           <div className="relative">
             <Chessboard 
-              fen={fen === 'start' && gameData?.fen ? gameData.fen : fen}
+              fen={localGame.fen()}
               onMove={makeMove}
               gameStarted={gameStarted}
               isEngineLoading={isEngineLoading}
@@ -413,17 +419,18 @@ function GamePageContent() {
               </div>
             )}
           </div>
-           <PlayerCard 
-            name={bottomPlayer.username} 
-            elo={bottomPlayer.eloRating} 
-            avatar={bottomPlayer.avatarUrl}
-            isBot={isBotGame && bottomPlayer.id === 'bot'}
-            isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
-            color={playerColor === 'w' ? 'White' : 'Black'}
-            drawOffered={drawOfferedToMe}
-            onDrawResponse={handleDrawResponse}
-          />
-
+          {bottomPlayer && (
+             <PlayerCard 
+                name={bottomPlayer.username} 
+                elo={bottomPlayer.eloRating} 
+                avatar={bottomPlayer.avatarUrl}
+                isBot={isBotGame && bottomPlayer.id === 'bot'}
+                isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
+                color={playerColor === 'w' ? 'White' : 'Black'}
+                drawOffered={drawOfferedToMe}
+                onDrawResponse={handleDrawResponse}
+              />
+          )}
           <div className="p-4 flex items-center justify-between bg-card rounded-lg">
             <div className="grid grid-cols-2 gap-2 flex-1">
               {gameStarted ? (
@@ -462,8 +469,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-
-    
 
     
