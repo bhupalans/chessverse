@@ -70,6 +70,19 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         if (move === null) {
             throw new functions.https.HttpsError('invalid-argument', 'Illegal move.');
         }
+        let sound = 'move';
+        if (game.inCheck()) {
+            sound = 'check';
+        }
+        else if (move.flags.includes('c')) { // 'c' for capture
+            sound = 'capture';
+        }
+        else if (move.flags.includes('k') || move.flags.includes('q')) { // Castling
+            sound = 'castle';
+        }
+        else if (move.flags.includes('p')) { // Promotion
+            sound = 'promotion';
+        }
         const newFen = game.fen();
         const newTurn = game.turn();
         const lastMove = {
@@ -78,6 +91,7 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             piece: move.piece,
             color: move.color,
             captured: move.flags.includes('c'),
+            sound: sound,
         };
         await gameRef.update({ fen: newFen, turn: newTurn, lastMove });
         if (game.isGameOver()) {
