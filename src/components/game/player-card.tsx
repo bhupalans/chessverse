@@ -6,12 +6,13 @@ import { Bot, Timer, Handshake } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
 
-const formatTime = (timeInSeconds: number | null | undefined): string => {
-  if (timeInSeconds === null || typeof timeInSeconds === 'undefined' || timeInSeconds < 0) {
+const formatTime = (timeInMilliseconds: number | null | undefined): string => {
+  if (timeInMilliseconds === null || typeof timeInMilliseconds === 'undefined' || timeInMilliseconds < 0) {
     return '00:00';
   }
-  const minutes = Math.floor(timeInSeconds / 60);
-  const seconds = Math.floor(timeInSeconds % 60);
+  const totalSeconds = Math.floor(timeInMilliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
@@ -37,11 +38,7 @@ export const PlayerCard = ({
   drawOffered?: boolean;
   onDrawResponse?: (accept: boolean) => void;
 }) => {
-  //const formattedTime = useMemo(() => formatTime(time), [time]);
-  const formattedTime = useMemo(() => {
-    if (typeof time !== 'number') return '00:00';
-    return formatTime(Math.floor(time / 1000));   // ← convert ms → seconds
-  }, [time]);
+  const formattedTime = useMemo(() => formatTime(time), [time]);
   
 
   return (
@@ -75,12 +72,17 @@ export const PlayerCard = ({
           </div>
         )}
 
-        {typeof time === 'number' && (
+        {typeof time === 'number' ? (
           <div className={cn("flex items-center gap-2 rounded-md p-2 font-mono text-xl", isTurn ? "bg-background/80" : "bg-transparent")}>
             <Timer className={cn("h-6 w-6", isTurn ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn(isTurn ? "text-foreground" : "text-muted-foreground", time < 10 && time > 0 && "text-destructive font-bold")}>{formattedTime}</span>
+            <span className={cn(isTurn ? "text-foreground" : "text-muted-foreground", time < 10000 && time > 0 && "text-destructive font-bold")}>{formattedTime}</span>
           </div>
-        )}
+        ) : firestoreGame?.timeControl ? (
+           <div className={cn("flex items-center gap-2 rounded-md p-2 font-mono text-xl", isTurn ? "bg-background/80" : "bg-transparent")}>
+            <Timer className={cn("h-6 w-6", isTurn ? "text-primary" : "text-muted-foreground")} />
+            <span className={cn(isTurn ? "text-foreground" : "text-muted-foreground")}>{formatTime(firestoreGame.timeControl.initial)}</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );

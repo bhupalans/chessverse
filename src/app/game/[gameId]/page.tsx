@@ -131,32 +131,34 @@ function GamePageContent() {
   }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
 
   // Clock ticking effect
-useEffect(() => {
-  if (!liveGameState?.clocks) return;
-
-  const tick = () => {
-    const now = Date.now();
-    const { white, black, lastTick, running } = liveGameState.clocks;
-
-    if (running === 'w') {
-      setDisplayClocks({
-        white: Math.max(0, white - (now - lastTick)),
-        black,
-      });
-    } else if (running === 'b') {
-      setDisplayClocks({
-        white,
-        black: Math.max(0, black - (now - lastTick)),
-      });
-    } else {
-      setDisplayClocks({ white, black });
-    }
-  };
-
-  tick();
-  const id = setInterval(tick, 250);
-  return () => clearInterval(id);
-}, [liveGameState?.clocks]);
+  useEffect(() => {
+    if (!liveGameState?.clocks || finalGameOver) return;
+  
+    const tick = () => {
+      const now = Date.now();
+      const { white, black, lastTick, running } = liveGameState.clocks;
+  
+      if (running) {
+        const elapsed = (now - lastTick); // Milliseconds
+  
+        let newWhite = white * 1000;
+        let newBlack = black * 1000;
+  
+        if (running === 'w') {
+          newWhite = Math.max(0, (white * 1000) - elapsed);
+        } else if (running === 'b') {
+          newBlack = Math.max(0, (black * 1000) - elapsed);
+        }
+        setDisplayClocks({ white: newWhite, black: newBlack });
+      } else {
+         setDisplayClocks({ white: white * 1000, black: black * 1000 });
+      }
+    };
+  
+    tick(); // Initial tick
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [liveGameState?.clocks, finalGameOver]);
 
   const playerColor = useMemo<Color>(() => {
     if (isBotGame || !user || !firestoreGame) return 'w';
