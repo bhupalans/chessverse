@@ -2,12 +2,11 @@
 'use client';
 
 import { ThemeProvider } from '@/context/theme-context';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Chess, type Square as ChessJsSquare, type Color, type Move } from 'chess.js';
+import { useParams, useRouter } from 'next/navigation';
+import { Suspense, useState, useMemo, useEffect, useCallback } from 'react';
+import { Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Button } from '@/components/ui/button';
 import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
@@ -19,20 +18,10 @@ import { ref, onValue } from 'firebase/database';
 import { doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
-
-declare global {
-  interface Window {
-    Stockfish: any;
-  }
-}
-
 function GamePageContent() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const gameId = Array.isArray(params.gameId) ? params.gameId[0] : params.gameId;
-  const playMode = searchParams.get('play');
-  const isBotGame = playMode === 'bot';
 
   const realtimeDB = useRealtimeDB();
   const firestore = useFirestore();
@@ -40,16 +29,14 @@ function GamePageContent() {
   
   const [liveGameState, setLiveGameState] = useState<LiveGame | null>(null);
   const [displayClocks, setDisplayClocks] = useState<{ white: number; black: number } | null>(null);
-  const [isGameLoading, setIsGameLoading] = useState(!isBotGame);
-
+  
   const gameDocRef = useMemoFirebase(() => {
-    if (isBotGame || !gameId || !firestore) return null;
+    if (!gameId || !firestore) return null;
     return doc(firestore, 'games', gameId);
-  }, [firestore, gameId, isBotGame]);
+  }, [firestore, gameId]);
 
   const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
 
-  const [botGameFen, setBotGameFen] = useState(() => new Chess().fen());
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
@@ -57,11 +44,8 @@ function GamePageContent() {
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
   
   const { toast } = useToast();
-  const engine = useRef<any>(null);
-  const [isEngineLoading, setIsEngineLoading] = useState(isBotGame);
-  const lastDrawActionRef = useRef(firestoreGame?.lastDrawAction);
   
-  const gameFen = isBotGame ? botGameFen : liveGameState?.fen;
+  const gameFen = liveGameState?.fen;
   
   const game = useMemo(() => {
     if (!gameFen) return new Chess();
@@ -87,39 +71,24 @@ function GamePageContent() {
   }, []);
 
   useEffect(() => {
-    if (isBotGame || !realtimeDB || !gameId) return;
+    if (!realtimeDB || !gameId) return;
 
-    setIsGameLoading(true);
     const gameRef = ref(realtimeDB, `liveGames/${gameId}`);
     
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        if(data.lastMove) {
+        if(data.lastMove && (!lastMove || data.lastMove.at !== lastMove.at)) {
             if(data.lastMove.sound) {
                 playSound(data.lastMove.sound);
             }
             setLastMove(data.lastMove);
-        } else {
-            setLastMove(null);
         }
         setLiveGameState(data);
-        if (data.clocks) {
-            setDisplayClocks({ white: data.clocks.white, black: data.clocks.black });
-        } else {
-            setDisplayClocks(null);
-        }
       } else if (!isFirestoreGameLoading && firestoreGame?.status !== 'inprogress') {
          setLiveGameState({ fen: new Chess().fen(), turn: 'w'});
          setDisplayClocks(null);
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Game not found',
-          description: `Could not load live game with ID: ${gameId}`
-        });
       }
-      setIsGameLoading(false);
     }, (error) => {
       console.error("Realtime DB Error:", error);
       toast({
@@ -127,50 +96,45 @@ function GamePageContent() {
           title: 'Error loading game',
           description: "There was a problem connecting to the database."
       });
-      setIsGameLoading(false);
     });
 
     return () => unsubscribe();
-  }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
+  }, [realtimeDB, gameId, toast, firestoreGame, isFirestoreGameLoading, playSound, lastMove]);
+
 
   useEffect(() => {
     if (finalGameOver || !liveGameState?.clocks) {
-      if (liveGameState?.clocks) {
-        // Ensure final time is displayed when game is over
-        setDisplayClocks({ white: liveGameState.clocks.white, black: liveGameState.clocks.black });
-      }
-      return;
-    };
+        if (liveGameState?.clocks) {
+            setDisplayClocks({ white: liveGameState.clocks.white, black: liveGameState.clocks.black });
+        }
+        return;
+    }
 
     const interval = setInterval(() => {
-      const { clocks } = liveGameState;
-      if (!clocks || !clocks.running || !clocks.lastTick) return;
+        const { clocks } = liveGameState;
+        if (!clocks || !clocks.running || !clocks.lastTick) return;
 
-      const elapsed = (Date.now() - clocks.lastTick) / 1000;
-      let newWhite = clocks.white;
-      let newBlack = clocks.black;
-      
-      if (clocks.running === 'w') {
-        newWhite = Math.max(0, clocks.white - elapsed);
-        newBlack = clocks.black; // Keep black clock frozen
-      } else if (clocks.running === 'b') {
-        newBlack = Math.max(0, clocks.black - elapsed);
-        newWhite = clocks.white; // Keep white clock frozen
-      }
-      
-      setDisplayClocks({ white: newWhite, black: newBlack });
+        const elapsed = (Date.now() - clocks.lastTick) / 1000;
+        let newWhite = clocks.white;
+        let newBlack = clocks.black;
+
+        if (clocks.running === 'w') {
+            newWhite = Math.max(0, clocks.white - elapsed);
+        } else if (clocks.running === 'b') {
+            newBlack = Math.max(0, clocks.black - elapsed);
+        }
+        
+        setDisplayClocks({ white: newWhite, black: newBlack });
 
     }, 250);
 
     return () => clearInterval(interval);
-  }, [liveGameState?.clocks, finalGameOver]);
+  }, [liveGameState, finalGameOver]);
 
   const playerColor = useMemo<Color>(() => {
-    if (isBotGame || !user || !firestoreGame) return 'w';
-    return firestoreGame.player1Id === user.uid ? 'w' : 'b';
-  }, [user, firestoreGame, isBotGame]);
-
-  const opponentColor = playerColor === 'w' ? 'b' : 'w';
+    if (!user || !firestoreGame) return 'w'; // Default for loading or bot game
+    return firestoreGame.player1Id === user.uid ? (firestoreGame.player1Color || 'w') : (firestoreGame.player1Color === 'w' ? 'b' : 'w');
+  }, [user, firestoreGame]);
   
   const findKingPositions = useCallback((gameInstance: Chess) => {
     let w: ChessJsSquare | null = null;
@@ -189,16 +153,17 @@ function GamePageContent() {
   }, []);
 
   const { whitePlayer, blackPlayer, isLoading: arePlayersLoading } = useMemo(() => {
-    if (isBotGame) {
-      const humanPlayer = { id: user?.uid || 'human', username: user?.displayName || 'You', eloRating: 1500, avatarUrl: user?.photoURL || PlaceHolderImages.find(p => p.id === 'user1')?.imageUrl || '' };
-      const botPlayer = { id: 'bot', username: 'Stockfish Bot', eloRating: 2000, avatarUrl: PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl || '' };
-      return { whitePlayer: humanPlayer, blackPlayer: botPlayer, isLoading: false };
-    }
     if (isFirestoreGameLoading || !firestoreGame) {
       return { whitePlayer: null, blackPlayer: null, isLoading: true };
     }
-    return { whitePlayer: firestoreGame.player1, blackPlayer: firestoreGame.player2, isLoading: false };
-  }, [isBotGame, firestoreGame, isFirestoreGameLoading, user]);
+    const p1 = firestoreGame.player1;
+    const p2 = firestoreGame.player2;
+
+    if (firestoreGame.player1Color === 'b') {
+        return { whitePlayer: p2, blackPlayer: p1, isLoading: false };
+    }
+    return { whitePlayer: p1, blackPlayer: p2, isLoading: false };
+  }, [firestoreGame, isFirestoreGameLoading]);
 
   const handleGameOver = useCallback((reason: string, winner?: 'w' | 'b' | 'd') => {
       playSound('game-end');
@@ -209,9 +174,7 @@ function GamePageContent() {
 
       let winnerName = 'draw';
       if (winnerData !== 'd') {
-          if (isBotGame) {
-              winnerName = winnerData === playerColor ? (user?.displayName || 'You') : 'Stockfish Bot';
-          } else if (whitePlayer && blackPlayer) {
+          if (whitePlayer && blackPlayer) {
               if (winnerData === 'w') {
                   winnerName = whitePlayer.username;
               } else {
@@ -222,7 +185,7 @@ function GamePageContent() {
       if (!gameOverState) {
         setGameOverState({ winner: winnerName, reason });
       }
-  }, [isBotGame, game, playerColor, playSound, user, findKingPositions, whitePlayer, blackPlayer, gameOverState]);
+  }, [game, playSound, findKingPositions, whitePlayer, blackPlayer, gameOverState]);
   
   useEffect(() => {
     if (firestoreGame?.status === 'completed' && !gameOverState) {
@@ -236,119 +199,7 @@ function GamePageContent() {
     }
   }, [firestoreGame, gameStarted]);
 
-  useEffect(() => {
-    const lastDrawAction = firestoreGame?.lastDrawAction;
-    if (lastDrawAction && lastDrawAction.at !== lastDrawActionRef.current?.at) {
-        if (lastDrawAction.type === 'declined' && lastDrawAction.by === opponentColor) {
-            toast({
-                title: 'Draw Offer Declined',
-                description: 'Your opponent has declined the draw offer.',
-            });
-        }
-    }
-    lastDrawActionRef.current = lastDrawAction;
-  }, [firestoreGame?.lastDrawAction, opponentColor, toast]);
-
-
-  const engineGo = useCallback(() => {
-    if (engine.current) {
-      engine.current.postMessage('go depth 15');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isBotGame) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/16.0.0/stockfish.umd.js';
-      script.async = true;
-      script.onload = () => {
-        if (window.Stockfish) {
-            const sf = new (window.Stockfish as any)();
-            engine.current = sf;
-            sf.addEventListener('message', (e: any) => {
-              if (e.data?.startsWith('bestmove')) {
-                const bestMove = e.data.split(' ')[1];
-                const tempGame = new Chess(game.fen());
-                if (bestMove && tempGame.turn() === opponentColor) {
-                  const moveResult = tempGame.move(bestMove, { sloppy: true });
-
-                  if (moveResult) {
-                    if (tempGame.inCheck()) playSound('check');
-                    else if (moveResult.flags.includes('c')) playSound('capture');
-                    else playSound('move');
-                    
-                    setLastMove({ from: moveResult.from, to: moveResult.to, piece: moveResult.piece, color: moveResult.color, captured: moveResult.flags.includes('c') });
-                    setBotGameFen(tempGame.fen());
-
-                    if (tempGame.isGameOver()) {
-                      if(tempGame.isCheckmate()){
-                         handleGameOver('Checkmate!', tempGame.turn() === 'w' ? 'b' : 'w');
-                      } else if (tempGame.isStalemate()) {
-                         handleGameOver('Stalemate', 'd');
-                      } else if (tempGame.isDraw()) {
-                         handleGameOver('Draw', 'd');
-                      } else {
-                         handleGameOver('Game Over');
-                      }
-                    }
-                  }
-                }
-              }
-              if (e.data === 'uciok') {
-                setIsEngineLoading(false);
-              }
-            });
-            sf.postMessage('uci');
-        }
-      };
-      document.body.appendChild(script);
-
-      return () => {
-        if(document.body.contains(script)){
-          document.body.removeChild(script);
-        }
-        if (engine.current) {
-          engine.current.postMessage('quit');
-        }
-      };
-    }
-  }, [isBotGame, game, opponentColor, playSound, handleGameOver]);
-
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-    if (isBotGame) {
-      // Logic for making a move in a bot game
-      const tempGame = new Chess(gameFen);
-      const moveResult = tempGame.move(move);
-
-      if (moveResult) {
-        if (tempGame.inCheck()) playSound('check');
-        else if (moveResult.flags.includes('c')) playSound('capture');
-        else playSound('move');
-        
-        setLastMove({ from: moveResult.from, to: moveResult.to, piece: moveResult.piece, color: moveResult.color, captured: moveResult.flags.includes('c') });
-        setBotGameFen(tempGame.fen());
-        
-        if (tempGame.isGameOver()) {
-           if(tempGame.isCheckmate()){
-             handleGameOver('Checkmate!', tempGame.turn() === 'w' ? 'b' : 'w');
-           } else if (tempGame.isStalemate()) {
-             handleGameOver('Stalemate', 'd');
-           } else if (tempGame.isDraw()) {
-             handleGameOver('Draw', 'd');
-           }
-        } else {
-          // Trigger bot move
-          engine.current.postMessage(`position fen ${tempGame.fen()}`);
-          engineGo();
-        }
-        return true;
-      } else {
-        playSound('illegal');
-        toast({ title: 'Invalid move' });
-        return false;
-      }
-    } else {
-      // Logic for making a move in a player vs player game
       try {
         const functions = getFunctions();
         const submitMove = httpsCallable(functions, 'submitMove');
@@ -364,7 +215,6 @@ function GamePageContent() {
         });
         return false;
       }
-    }
   };
   
   const handleGameAction = async (action: 'resign' | 'draw' | 'abort' | 'decline-draw') => {
@@ -378,7 +228,8 @@ function GamePageContent() {
       if (action === 'resign') {
         toast({ title: 'You have resigned.' });
       } else if (action === 'draw') {
-        const drawOfferedByOpponent = firestoreGame?.drawOffer && firestoreGame.drawOffer !== playerColor;
+        const opponentId = firestoreGame?.player1Id === user?.uid ? firestoreGame?.player2Id : firestoreGame?.player1Id;
+        const drawOfferedByOpponent = firestoreGame?.drawOffer === opponentId;
         if(drawOfferedByOpponent) {
              toast({ title: 'Draw accepted!' });
         } else {
@@ -397,18 +248,11 @@ function GamePageContent() {
 
 
   const handleResign = () => {
-    if (isBotGame) {
-        if (finalGameOver) return;
-        const winnerId = opponentColor;
-        const opponentName = 'Stockfish Bot';
-        handleGameOver(`You have resigned. ${opponentName} wins.`, winnerId);
-    } else {
        handleGameAction('resign');
-    }
   };
 
   const handleOfferDraw = () => {
-     if (isBotGame) {
+     if(firestoreGame?.isBotGame) {
         toast({ title: 'Draw Offer', description: 'Cannot offer draw to bot.' });
      } else {
         handleGameAction('draw');
@@ -423,17 +267,12 @@ function GamePageContent() {
     }
   };
 
-  const handleStartGame = () => {
-     if(isBotGame) {
-       setGameStarted(true);
-       setLastMove(null);
-     }
-  };
+  const opponentId = firestoreGame?.player1Id === user?.uid ? firestoreGame?.player2Id : firestoreGame?.player1Id;
 
   const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = game.turn();
-  const drawOfferedToMe = !isBotGame && firestoreGame?.drawOffer === opponentColor;
+  const drawOfferedToMe = !firestoreGame?.isBotGame && firestoreGame?.drawOffer === opponentId;
 
   const topPlayerTime = displayClocks ? (topPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
   const bottomPlayerTime = displayClocks ? (bottomPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
@@ -449,10 +288,10 @@ function GamePageContent() {
   );
 
 
-  if (isGameLoading || arePlayersLoading || !gameFen) {
+  if (isFirestoreGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
-   if (!liveGameState && !isBotGame) {
+   if (!liveGameState) {
     return <div className="flex h-full items-center justify-center">Game not found.</div>;
   }
 
@@ -464,7 +303,7 @@ function GamePageContent() {
               name={topPlayer.username} 
               elo={topPlayer.eloRating} 
               avatar={topPlayer.avatarUrl}
-              isBot={isBotGame && topPlayer.id === 'bot'} 
+              isBot={topPlayer.id === 'BOT'}
               isTurn={topPlayerIsTurn} 
               color={topPlayer === whitePlayer ? 'White' : 'Black'}
               time={topPlayerTime}
@@ -480,7 +319,7 @@ function GamePageContent() {
                     isGameOver={finalGameOver}
                     turn={currentTurn}
                     gameStarted={gameStarted}
-                    isEngineLoading={isEngineLoading}
+                    isEngineLoading={false}
                     winner={winnerColor}
                     kingPositions={kingPositions}
                     lastMove={lastMove}
@@ -507,19 +346,7 @@ function GamePageContent() {
                 </div>
               </div>
             )}
-             {!gameStarted && !isEngineLoading && isBotGame && (
-                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-                     <Button onClick={handleStartGame} size="lg">
-                         <Play className="mr-2 h-5 w-5" /> Play vs Bot
-                     </Button>
-                 </div>
-             )}
-             {isEngineLoading && isBotGame && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
-                    <div className="text-white text-lg">Loading Engine...</div>
-                </div>
-             )}
-             {!gameStarted && !isBotGame && firestoreGame?.status === 'waiting' &&(
+             {!gameStarted && firestoreGame?.status === 'waiting' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
                     <div className="text-white text-lg text-center p-4">
                         <p>Waiting for an opponent...</p>
@@ -533,7 +360,7 @@ function GamePageContent() {
                 name={bottomPlayer.username} 
                 elo={bottomPlayer.eloRating} 
                 avatar={bottomPlayer.avatarUrl}
-                isBot={isBotGame && bottomPlayer.id === 'bot'}
+                isBot={bottomPlayer.id === 'BOT'}
                 isTurn={bottomPlayerIsTurn} 
                 color={playerColor === 'w' ? 'White' : 'Black'}
                 drawOffered={drawOfferedToMe}
@@ -549,15 +376,13 @@ function GamePageContent() {
                   <Button variant="outline" onClick={handleResign} disabled={finalGameOver}>
                     <Flag className="mr-2 h-4 w-4" /> Resign
                   </Button>
-                  <Button variant="outline" onClick={handleOfferDraw} disabled={finalGameOver}>
+                  <Button variant="outline" onClick={handleOfferDraw} disabled={finalGameOver || firestoreGame?.isBotGame}>
                     <Swords className="mr-2 h-4 w-4" /> 
                     Offer Draw
                   </Button>
                 </>
-              ) : !isBotGame ? (
-                 <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
               ) : (
-                <div className="col-span-2 text-center text-muted-foreground">Ready to play vs Bot</div>
+                 <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
               )}
             </div>
              <div className="ml-2">

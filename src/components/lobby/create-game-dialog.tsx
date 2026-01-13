@@ -14,13 +14,13 @@ import {
 } from '@/components/ui/dialog';
 import { Bot, PlusCircle, User as UserIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useAuth, useFirestore, useUser } from '@/firebase';
+import { useFirestore, useUser } from '@/firebase';
 import { addDoc, collection, serverTimestamp, query, where, getDocs, limit, updateDoc, doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Chess } from 'chess.js';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import type { TimeControl, Game } from '@/lib/types';
+import type { TimeControl } from '@/lib/types';
 
 
 const timeControlPresets: { name: string; value: TimeControl }[] = [
@@ -38,9 +38,55 @@ export function CreateGameDialog() {
   const { user } = useUser();
   const { toast } = useToast();
 
-  const handleCreateBotGame = () => {
+  const handleCreateBotGame = async () => {
+    if (!user) {
+      toast({
+        variant: 'destructive',
+        title: 'Not Logged In',
+        description: 'You must be logged in to play against the bot.',
+      });
+      return;
+    }
     setIsOpen(false);
-    router.push(`/game/bot-game-${Date.now()}?play=bot`);
+    
+    try {
+        const gamesCollection = collection(firestore, 'games');
+        const newGame = new Chess();
+
+        const newGameDoc = await addDoc(gamesCollection, {
+            status: 'inprogress',
+            isBotGame: true,
+            player1Id: user.uid,
+            player2Id: "BOT",
+            player1Color: 'w',
+            botDifficulty: 'medium',
+            player1: {
+                id: user.uid,
+                username: user.displayName || 'Anonymous',
+                avatarUrl: user.photoURL || '',
+                eloRating: 1200,
+            },
+            player2: {
+                id: 'BOT',
+                username: 'ChessVerse Bot',
+                avatarUrl: '/pieces/alpha/bK.svg',
+                eloRating: 1500,
+            },
+            fen: newGame.fen(),
+            turn: 'w',
+            timeControl: selectedTimeControl,
+            createdAt: serverTimestamp()
+        });
+
+        router.push(`/game/${newGameDoc.id}`);
+    } catch (error) {
+        console.error("Error creating bot game:", error);
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Could not create a bot game. Please try again.",
+        });
+    }
   };
 
   const handleCreatePlayerGame = async () => {
@@ -58,20 +104,19 @@ export function CreateGameDialog() {
     try {
       const gamesCollection = collection(firestore, 'games');
       
-      // 1. Query for a waiting game with the same time control
       const q = query(
         gamesCollection,
         where('status', '==', 'waiting'),
+        where('isBotGame', '==', false),
         where('timeControl.initial', '==', selectedTimeControl.initial),
         where('timeControl.increment', '==', selectedTimeControl.increment),
-        where('player1Id', '!=', user.uid), // Can't join your own game
+        where('player1Id', '!=', user.uid),
         limit(1)
       );
       
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
-        // 2. If a game exists, join it
         const gameToJoin = querySnapshot.docs[0];
         const gameDocRef = doc(firestore, 'games', gameToJoin.id);
 
@@ -81,7 +126,7 @@ export function CreateGameDialog() {
             id: user.uid,
             username: user.displayName || 'Anonymous',
             avatarUrl: user.photoURL || '',
-            eloRating: 1200, // Placeholder ELO
+            eloRating: 1200, 
           },
           status: 'inprogress',
         });
@@ -93,7 +138,6 @@ export function CreateGameDialog() {
         router.push(`/game/${gameToJoin.id}`);
 
       } else {
-        // 3. If no game exists, create a new one
         const newGame = new Chess();
         const newGameDoc = await addDoc(gamesCollection, {
           player1Id: user.uid,
@@ -101,8 +145,10 @@ export function CreateGameDialog() {
             id: user.uid,
             username: user.displayName || 'Anonymous',
             avatarUrl: user.photoURL || '',
-            eloRating: 1200, // Placeholder ELO
+            eloRating: 1200, 
           },
+          player1Color: 'w',
+          isBotGame: false,
           status: 'waiting',
           createdAt: serverTimestamp(),
           fen: newGame.fen(),
@@ -166,6 +212,7 @@ export function CreateGameDialog() {
                 variant="outline"
                 className="h-24 flex-col"
                 onClick={handleCreateBotGame}
+                 disabled={!user || isFindingGame}
               >
                 <Bot className="h-8 w-8 mb-2" />
                 Play vs Bot

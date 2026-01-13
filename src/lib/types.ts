@@ -1,5 +1,4 @@
 
-
 export type Player = {
   id: string;
   username: string;
@@ -26,17 +25,18 @@ export type LastMove = {
   color: 'w' | 'b';
   captured: boolean;
   sound?: 'move' | 'capture' | 'check' | 'castle' | 'promotion';
+  at?: any; // Firestore Timestamp
 };
 
 export type LastDrawAction = {
     type: 'accepted' | 'declined';
-    by: 'w' | 'b';
+    by: string; // user.uid
     at: any; // Firestore Timestamp
 }
 
 export type TimeControl = {
-    initial: number; // in seconds
-    increment: number; // in seconds
+    initial: number; // in milliseconds
+    increment: number; // in milliseconds
 }
 
 export type Game = {
@@ -45,17 +45,21 @@ export type Game = {
   player2Id?: string;
   player1?: Player;
   player2?: Player;
+  player1Color?: 'w' | 'b';
+  isBotGame?: boolean;
+  botDifficulty?: 'easy' | 'medium' | 'hard';
   status: GameStatus;
   eloGain?: number;
   fen: string;
   turn: 'w' | 'b';
-  moves: string[];
+  moves?: string[];
   lastMove?: LastMove;
   winnerId?: 'w' | 'b' | 'd'; // d for draw
-  drawOffer?: 'w' | 'b' | null;
+  drawOffer?: string | null; // user.uid
   lastDrawAction?: LastDrawAction;
-  reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate';
-  timeControl?: TimeControl;
+  reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate' | 'timeout' | 'abort';
+  timeControl: TimeControl;
+  createdAt?: any;
 };
 
 export type HistoryGame = {
@@ -71,6 +75,7 @@ export type LiveClock = {
     black: number;
     running: 'w' | 'b';
     lastTick: number; // Timestamp
+    increment: number; // seconds
 }
 
 export type LiveGame = {
@@ -79,5 +84,3 @@ export type LiveGame = {
     lastMove?: LastMove;
     clocks?: LiveClock;
 }
-
-    
