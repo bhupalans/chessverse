@@ -7,8 +7,6 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { Crown, Flag } from 'lucide-react';
 
-const pieceSet = 'alpha';
-
 export interface LastMoveInfo {
   from: ChessJsSquare;
   to: ChessJsSquare;
@@ -25,8 +23,6 @@ export function ChessPieces({
   turn,
   gameStarted,
   isEngineLoading,
-  winner,
-  kingPositions,
   lastMove,
   orientation,
 }: {
@@ -37,8 +33,6 @@ export function ChessPieces({
   turn: Color;
   gameStarted: boolean;
   isEngineLoading: boolean;
-  winner: 'w' | 'b' | 'd' | null;
-  kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
   lastMove: LastMoveInfo | null;
   orientation: 'white' | 'black';
 }) {
@@ -76,7 +70,7 @@ export function ChessPieces({
     }
     return `${String.fromCharCode(97 + (7 - col))}${row + 1}` as ChessJsSquare;
   };
-
+  
   const handleBoardClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!playerColor) { // Spectator
       toast({ title: "Spectator Mode", description: "You can watch but not play."});
@@ -182,25 +176,16 @@ export function ChessPieces({
         {board.flat().filter(p => p !== null).map((piece) => {
           if (!piece) return null;
           const { row, col } = getSquareCoords(piece.square);
-          
-          const isWinningKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && piece.type === 'k' && piece.color === winner;
-          const isLosingKingSquare = isGameOver && winner && winner !== 'd' && kingPositions && piece.type === 'k' && piece.color !== winner;
 
           return (
             <div key={piece.square} className="absolute w-[12.5%] h-[12.5%]" style={{ top: `${row * 12.5}%`, left: `${col * 12.5}%` }}>
               <Image
-                src={`/pieces/${pieceSet}/${getPieceCode(piece)}.svg`}
+                src={`/pieces/alpha/${getPieceCode(piece)}.svg`}
                 alt={`${piece.color} ${piece.type}`}
                 fill
                 className="pointer-events-none"
                 unoptimized
               />
-              {isWinningKingSquare && (
-                <Crown className="absolute w-6 h-6 text-green-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ top: '-4px', left: '50%', transform: 'translateX(-50%)' }} />
-              )}
-              {isLosingKingSquare && (
-                <Flag className="absolute w-5 h-5 text-red-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" style={{ top: '-2px', left: '50%', transform: 'translateX(-50%)' }} />
-              )}
             </div>
           );
         })}
@@ -208,5 +193,3 @@ export function ChessPieces({
     </div>
   );
 }
-
-    

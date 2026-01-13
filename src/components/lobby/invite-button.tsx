@@ -8,7 +8,6 @@ import { addDoc, collection, serverTimestamp, doc, onSnapshot } from 'firebase/f
 import { useToast } from '@/hooks/use-toast';
 import { User as FirebaseUser } from 'firebase/auth';
 import type { Game, User as UserType, TimeControl } from '@/lib/types';
-import { Chess } from 'chess.js';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { useRouter } from 'next/navigation';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -81,11 +80,12 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
 
     try {
       const gamesCollection = collection(firestore, 'games');
-      const newGame = new Chess();
 
       const newGameDoc = await addDoc(gamesCollection, {
         player1Id: inviter.uid,
         player2Id: invitee.id,
+        player1Color: 'w',
+        player2Color: 'b',
         player1: {
           id: inviter.uid,
           username: inviter.displayName,
@@ -100,7 +100,6 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
         },
         status: 'invited',
         createdAt: serverTimestamp(),
-        fen: newGame.fen(),
         turn: 'w',
         timeControl: selectedTimeControl,
       });
@@ -161,4 +160,3 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
     </Popover>
   );
 }
-    

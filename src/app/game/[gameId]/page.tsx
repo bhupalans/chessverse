@@ -52,8 +52,6 @@ function GamePageContent() {
 
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
-  const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
-  const [kingPositions, setKingPositions] = useState<{ w: ChessJsSquare, b: ChessJsSquare } | null>(null);
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
   
   const { toast } = useToast();
@@ -112,7 +110,7 @@ function GamePageContent() {
 
 
   useEffect(() => {
-    if (finalGameOver || !liveGameState?.clocks) {
+    if (finalGameOver || !liveGameState?.clocks || !firestoreGame) {
         if (liveGameState?.clocks) {
             setDisplayClocks({ white: liveGameState.clocks.white, black: liveGameState.clocks.black });
         }
@@ -121,19 +119,19 @@ function GamePageContent() {
 
     const interval = setInterval(() => {
         const { clocks } = liveGameState;
-        if (!clocks || !clocks.running || !clocks.lastTick) return;
+        if (!clocks || !firestoreGame.turn || !clocks.lastTick) return;
 
         const elapsed = (Date.now() - clocks.lastTick) / 1000;
         let newWhite = clocks.white;
         let newBlack = clocks.black;
 
-        if (clocks.running === 'w') {
+        if (firestoreGame.turn === 'w') {
             newWhite = Math.max(0, clocks.white - elapsed);
         } else {
              newWhite = clocks.white
         }
         
-        if (clocks.running === 'b') {
+        if (firestoreGame.turn === 'b') {
             newBlack = Math.max(0, clocks.black - elapsed);
         } else {
             newBlack = clocks.black
@@ -144,35 +142,24 @@ function GamePageContent() {
     }, 250);
 
     return () => clearInterval(interval);
-  }, [liveGameState, finalGameOver]);
+  }, [liveGameState, finalGameOver, firestoreGame]);
 
   const myColor = useMemo<'w' | 'b' | null>(() => {
-    if (!user || !firestoreGame) return null; // Spectator by default
+    if (!user || !firestoreGame) return null;
     if (firestoreGame.player1Id === user.uid) {
-      return firestoreGame.player1Color || 'w';
+      return firestoreGame.player1Color;
     }
     if (firestoreGame.player2Id === user.uid) {
-      return (firestoreGame.player1Color || 'w') === 'w' ? 'b' : 'w';
+      return firestoreGame.player2Color;
     }
     return null; // Is a spectator
   }, [user, firestoreGame]);
-  
-  const findKingPositions = useCallback((gameInstance: Chess) => {
-    let w: ChessJsSquare | null = null;
-    let b: ChessJsSquare | null = null;
-    gameInstance.board().forEach((row) => {
-        row.forEach((piece) => {
-            if (piece && piece.type === 'k') {
-                if (piece.color === 'w') w = piece.square;
-                else b = piece.square;
-            }
-        });
-    });
-    if (w && b) {
-      setKingPositions({ w, b });
-    }
-  }, []);
 
+  const myTurn = useMemo(() => {
+    if (!myColor || !firestoreGame) return false;
+    return firestoreGame.turn === myColor;
+  }, [myColor, firestoreGame]);
+  
   const { whitePlayer, blackPlayer, isLoading: arePlayersLoading } = useMemo(() => {
     if (isFirestoreGameLoading || !firestoreGame) {
       return { whitePlayer: null, blackPlayer: null, isLoading: true };
@@ -186,27 +173,18 @@ function GamePageContent() {
     return { whitePlayer: p1, blackPlayer: p2, isLoading: false };
   }, [firestoreGame, isFirestoreGameLoading]);
 
-  const handleGameOver = useCallback((reason: string, winner?: 'w' | 'b' | 'd') => {
+  const handleGameOver = useCallback((reason: string, winnerId?: 'w' | 'b' | 'd') => {
       playSound('game-end');
-      const winnerData = winner || (game.turn() === 'b' ? 'w' : 'b');
-      setWinnerColor(winnerData);
       
-      findKingPositions(game);
-
       let winnerName = 'draw';
-      if (winnerData !== 'd') {
-          if (whitePlayer && blackPlayer) {
-              if (winnerData === 'w') {
-                  winnerName = whitePlayer.username;
-              } else {
-                  winnerName = blackPlayer.username;
-              }
-          }
+      if (winnerId !== 'd' && whitePlayer && blackPlayer) {
+          winnerName = winnerId === 'w' ? whitePlayer.username : blackPlayer.username;
       }
+      
       if (!gameOverState) {
         setGameOverState({ winner: winnerName, reason });
       }
-  }, [game, playSound, findKingPositions, whitePlayer, blackPlayer, gameOverState]);
+  }, [playSound, whitePlayer, blackPlayer, gameOverState]);
   
   useEffect(() => {
     if (firestoreGame?.status === 'completed' && !gameOverState) {
@@ -221,7 +199,7 @@ function GamePageContent() {
   }, [firestoreGame, gameStarted]);
 
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
-      if (!myColor || myColor !== game.turn()) {
+      if (!myTurn) {
         toast({
           variant: 'destructive',
           title: "Not your turn",
@@ -303,7 +281,7 @@ function GamePageContent() {
   const topPlayer = boardOrientation === 'white' ? blackPlayer : whitePlayer;
   const bottomPlayer = boardOrientation === 'white' ? whitePlayer : blackPlayer;
   
-  const currentTurn = game.turn();
+  const currentTurn = firestoreGame?.turn;
   const drawOfferedToMe = !firestoreGame?.isBotGame && firestoreGame?.drawOffer === opponentId;
 
   const topPlayerTime = displayClocks ? (topPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
@@ -314,18 +292,17 @@ function GamePageContent() {
     (topPlayer === blackPlayer && currentTurn === 'b')
   );
   
-  const bottomPlayerIsTurn = gameStarted && !finalGameOver && (
-    (bottomPlayer === whitePlayer && currentTurn === 'w') || 
-    (bottomPlayer === blackPlayer && currentTurn === 'b')
-  );
+  const bottomPlayerIsTurn = gameStarted && !finalGameOver && myTurn;
 
 
   if (isFirestoreGameLoading || arePlayersLoading || !gameFen) {
     return <div className="flex h-full items-center justify-center">Loading game...</div>;
   }
-   if (!liveGameState) {
+   if (!liveGameState || !firestoreGame) {
     return <div className="flex h-full items-center justify-center">Game not found.</div>;
   }
+
+  const winnerColor = firestoreGame.winnerId;
 
   return (
       <div className="flex h-full flex-col items-center justify-center bg-background p-4 lg:p-8">
@@ -349,11 +326,9 @@ function GamePageContent() {
                     onMove={makeMove}
                     playerColor={myColor}
                     isGameOver={finalGameOver}
-                    turn={currentTurn}
+                    turn={firestoreGame.turn}
                     gameStarted={gameStarted}
                     isEngineLoading={false}
-                    winner={winnerColor}
-                    kingPositions={kingPositions}
                     lastMove={lastMove}
                     orientation={boardOrientation}
                 />
@@ -438,5 +413,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    

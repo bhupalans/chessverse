@@ -17,7 +17,6 @@ import { useRouter } from 'next/navigation';
 import { useFirestore, useUser } from '@/firebase';
 import { addDoc, collection, serverTimestamp, query, where, getDocs, limit, updateDoc, doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Chess } from 'chess.js';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import type { TimeControl } from '@/lib/types';
@@ -51,7 +50,6 @@ export function CreateGameDialog() {
     
     try {
         const gamesCollection = collection(firestore, 'games');
-        const newGame = new Chess();
 
         const newGameDoc = await addDoc(gamesCollection, {
             status: 'inprogress',
@@ -59,6 +57,7 @@ export function CreateGameDialog() {
             player1Id: user.uid,
             player2Id: "BOT",
             player1Color: 'w',
+            player2Color: 'b',
             botDifficulty: 'medium',
             player1: {
                 id: user.uid,
@@ -72,7 +71,6 @@ export function CreateGameDialog() {
                 avatarUrl: '/pieces/alpha/bK.svg',
                 eloRating: 1500,
             },
-            fen: newGame.fen(),
             turn: 'w',
             timeControl: selectedTimeControl,
             createdAt: serverTimestamp()
@@ -138,7 +136,6 @@ export function CreateGameDialog() {
         router.push(`/game/${gameToJoin.id}`);
 
       } else {
-        const newGame = new Chess();
         const newGameDoc = await addDoc(gamesCollection, {
           player1Id: user.uid,
           player1: {
@@ -148,10 +145,10 @@ export function CreateGameDialog() {
             eloRating: 1200, 
           },
           player1Color: 'w',
+          player2Color: 'b',
           isBotGame: false,
           status: 'waiting',
           createdAt: serverTimestamp(),
-          fen: newGame.fen(),
           turn: 'w',
           timeControl: selectedTimeControl,
         });

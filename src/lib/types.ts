@@ -45,12 +45,13 @@ export type Game = {
   player2Id?: string;
   player1?: Player;
   player2?: Player;
-  player1Color?: 'w' | 'b';
+  player1Color: 'w' | 'b';
+  player2Color: 'w' | 'b';
   isBotGame?: boolean;
   botDifficulty?: 'easy' | 'medium' | 'hard';
   status: GameStatus;
   eloGain?: number;
-  fen: string;
+  fen?: string;
   turn: 'w' | 'b';
   moves?: string[];
   lastMove?: LastMove;
