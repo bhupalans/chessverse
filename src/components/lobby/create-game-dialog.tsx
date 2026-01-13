@@ -18,9 +18,20 @@ import { useAuth, useFirestore, useUser } from '@/firebase';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Chess } from 'chess.js';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
+import type { TimeControl } from '@/lib/types';
+
+
+const timeControlPresets: { name: string; value: TimeControl }[] = [
+  { name: 'Bullet (1+0)', value: { initial: 60000, increment: 0 } },
+  { name: 'Blitz (5+0)', value: { initial: 300000, increment: 0 } },
+  { name: 'Rapid (10+5)', value: { initial: 600000, increment: 5000 } },
+];
 
 export function CreateGameDialog() {
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedTimeControl, setSelectedTimeControl] = useState<TimeControl>(timeControlPresets[1].value);
   const router = useRouter();
   const firestore = useFirestore();
   const { user } = useUser();
@@ -56,10 +67,7 @@ export function CreateGameDialog() {
         createdAt: serverTimestamp(),
         fen: newGame.fen(),
         turn: 'w',
-        timeControl: {
-          initial: 300000, // 5 minutes
-          increment: 0,
-        },
+        timeControl: selectedTimeControl,
       });
       router.push(`/game/${newGameDoc.id}`);
     } catch (error) {
@@ -86,27 +94,43 @@ export function CreateGameDialog() {
         <DialogHeader>
           <DialogTitle>Create a New Game</DialogTitle>
           <DialogDescription>
-            Choose your opponent. Play against the bot or wait for another player.
+            Choose your opponent and time control.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-4 py-4">
-          <Button
-            variant="outline"
-            className="h-24 flex-col"
-            onClick={handleCreateBotGame}
-          >
-            <Bot className="h-8 w-8 mb-2" />
-            Play vs Bot
-          </Button>
-           <Button
-            variant="outline"
-            className="h-24 flex-col"
-            onClick={handleCreatePlayerGame}
-            disabled={!user}
-          >
-            <UserIcon className="h-8 w-8 mb-2" />
-            Play vs Player
-          </Button>
+        <div className="grid grid-cols-1 gap-4 py-4">
+           <div className="space-y-3">
+              <Label>Time Control</Label>
+              <RadioGroup
+                defaultValue={JSON.stringify(selectedTimeControl)}
+                onValueChange={(value) => setSelectedTimeControl(JSON.parse(value))}
+              >
+                {timeControlPresets.map((preset) => (
+                  <div key={preset.name} className="flex items-center space-x-2">
+                    <RadioGroupItem value={JSON.stringify(preset.value)} id={preset.name} />
+                    <Label htmlFor={preset.name}>{preset.name}</Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+           <div className="grid grid-cols-2 gap-4">
+              <Button
+                variant="outline"
+                className="h-24 flex-col"
+                onClick={handleCreateBotGame}
+              >
+                <Bot className="h-8 w-8 mb-2" />
+                Play vs Bot
+              </Button>
+               <Button
+                variant="outline"
+                className="h-24 flex-col"
+                onClick={handleCreatePlayerGame}
+                disabled={!user}
+              >
+                <UserIcon className="h-8 w-8 mb-2" />
+                Play vs Player
+              </Button>
+            </div>
         </div>
         {!user && <p className="text-center text-sm text-muted-foreground">Log in to play against another player.</p>}
         <DialogFooter>
