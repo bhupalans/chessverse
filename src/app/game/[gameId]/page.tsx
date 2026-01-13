@@ -37,6 +37,8 @@ function GamePageContent() {
 
   const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
 
+  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
+
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
@@ -56,8 +58,6 @@ function GamePageContent() {
       return new Chess();
     }
   }, [gameFen]);
-
-  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
 
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal' | 'castle' | 'promotion') => {
     if (typeof window !== 'undefined') {
@@ -132,8 +132,11 @@ function GamePageContent() {
   }, [liveGameState, finalGameOver]);
 
   const playerColor = useMemo<Color>(() => {
-    if (!user || !firestoreGame) return 'w'; // Default for loading or bot game
-    return firestoreGame.player1Id === user.uid ? (firestoreGame.player1Color || 'w') : (firestoreGame.player1Color === 'w' ? 'b' : 'w');
+    if (!user || !firestoreGame) return 'w'; 
+    if (firestoreGame.player1Id === user.uid) {
+        return firestoreGame.player1Color || 'w';
+    }
+    return firestoreGame.player1Color === 'w' ? 'b' : 'w';
   }, [user, firestoreGame]);
   
   const findKingPositions = useCallback((gameInstance: Chess) => {
@@ -362,7 +365,7 @@ function GamePageContent() {
                 avatar={bottomPlayer.avatarUrl}
                 isBot={bottomPlayer.id === 'BOT'}
                 isTurn={bottomPlayerIsTurn} 
-                color={playerColor === 'w' ? 'White' : 'Black'}
+                color={bottomPlayer === whitePlayer ? 'White' : 'Black'}
                 drawOffered={drawOfferedToMe}
                 onDrawResponse={handleDrawResponse}
                 time={bottomPlayerTime}

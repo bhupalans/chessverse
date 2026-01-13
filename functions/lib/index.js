@@ -40,8 +40,103 @@ const chess_js_1 = require("chess.js");
 admin.initializeApp();
 const db = admin.database();
 const firestore = admin.firestore();
+// --- Bot Logic ---
+function getBotMove(game, difficulty) {
+    const legalMoves = game.moves({ verbose: true });
+    if (legalMoves.length === 0)
+        return null;
+    if (difficulty === 'medium') {
+        const capturingMoves = legalMoves.filter(m => m.flags.includes('c'));
+        if (capturingMoves.length > 0) {
+            return capturingMoves[Math.floor(Math.random() * capturingMoves.length)].san;
+        }
+    }
+    // Default to random move for 'easy' or if no captures for 'medium'
+    return legalMoves[Math.floor(Math.random() * legalMoves.length)].san;
+}
+async function handleBotMove(gameId, firestoreGameRef, firestoreGameData) {
+    const gameRef = db.ref(`/liveGames/${gameId}`);
+    const snapshot = await gameRef.once('value');
+    const gameData = snapshot.val();
+    if (!gameData)
+        return; // Should not happen
+    const game = new chess_js_1.Chess(gameData.fen);
+    const botMoveSan = getBotMove(game, firestoreGameData.botDifficulty || 'medium');
+    if (botMoveSan === null)
+        return; // No legal moves for bot
+    const botMove = game.move(botMoveSan);
+    let sound = 'move';
+    if (game.inCheck()) {
+        sound = 'check';
+    }
+    else if (botMove.flags.includes('c')) {
+        sound = 'capture';
+    }
+    else if (botMove.flags.includes('k') || botMove.flags.includes('q')) {
+        sound = 'castle';
+    }
+    else if (botMove.flags.includes('p')) {
+        sound = 'promotion';
+    }
+    const newFen = game.fen();
+    const newTurn = game.turn();
+    const lastMove = {
+        from: botMove.from,
+        to: botMove.to,
+        piece: botMove.piece,
+        color: botMove.color,
+        captured: botMove.flags.includes('c'),
+        sound: sound,
+    };
+    const updates = {
+        fen: newFen,
+        turn: newTurn,
+        lastMove: lastMove
+    };
+    if (gameData.clocks && firestoreGameData.timeControl) {
+        const now = Date.now();
+        const lastTick = gameData.clocks.lastTick;
+        const elapsed = (now - lastTick) / 1000;
+        const botColorName = firestoreGameData.player1Color === 'w' ? 'black' : 'white';
+        const increment = firestoreGameData.timeControl.increment / 1000 || 0;
+        const botTimeRemaining = gameData.clocks[botColorName] - elapsed;
+        if (botTimeRemaining <= 0) {
+            await firestoreGameRef.update({
+                status: 'completed',
+                winnerId: game.turn(), // Human wins
+                reason: 'timeout',
+            });
+            return;
+        }
+        updates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
+        updates[`clocks/${botColorName}`] = botTimeRemaining + increment;
+        updates['clocks/running'] = newTurn;
+    }
+    await gameRef.update(updates);
+    if (game.isGameOver()) {
+        let reason = 'Game Over';
+        let winnerId = newTurn === 'w' ? 'b' : 'w';
+        if (game.isCheckmate()) {
+            reason = 'Checkmate';
+        }
+        else if (game.isStalemate()) {
+            reason = 'Stalemate';
+            winnerId = 'd';
+        }
+        else if (game.isDraw()) {
+            reason = 'Draw';
+            winnerId = 'd';
+        }
+        await firestoreGameRef.update({
+            status: 'completed',
+            winnerId: winnerId,
+            reason: reason,
+            fen: newFen,
+        });
+    }
+}
 exports.submitMove = functions.https.onCall(async (data, context) => {
-    // Ensure the user is authenticated
+    // Ensure the user is authenticated for non-bot games
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
     }
@@ -61,12 +156,14 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         if (!gameData || !firestoreGameData) {
             throw new functions.https.HttpsError('not-found', 'Game not found.');
         }
-        const playerColor = context.auth.uid === firestoreGameData.player1Id ? 'w' : 'b';
+        const isBotGame = firestoreGameData.isBotGame === true;
+        const playerColor = isBotGame
+            ? firestoreGameData.player1Color
+            : (context.auth.uid === firestoreGameData.player1Id ? firestoreGameData.player1Color || 'w' : (firestoreGameData.player1Color === 'w' ? 'b' : 'w'));
         const game = new chess_js_1.Chess(gameData.fen);
         if (game.turn() !== playerColor) {
             throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
         }
-        // --- Timeout Check ---
         if (gameData.clocks && firestoreGameData.timeControl) {
             const now = Date.now();
             const lastTick = gameData.clocks.lastTick;
@@ -75,10 +172,9 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             if (playerTime - elapsed <= 0) {
                 await firestoreGameRef.update({
                     status: 'completed',
-                    winnerId: playerColor === 'w' ? 'b' : 'w', // Opponent wins
+                    winnerId: playerColor === 'w' ? 'b' : 'w',
                     reason: 'timeout',
                 });
-                // No need to update RTDB as game is over
                 return { status: 'timeout' };
             }
         }
@@ -90,13 +186,13 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         if (game.inCheck()) {
             sound = 'check';
         }
-        else if (move.flags.includes('c')) { // 'c' for capture
+        else if (move.flags.includes('c')) {
             sound = 'capture';
         }
-        else if (move.flags.includes('k') || move.flags.includes('q')) { // Castling
+        else if (move.flags.includes('k') || move.flags.includes('q')) {
             sound = 'castle';
         }
-        else if (move.flags.includes('p')) { // Promotion
+        else if (move.flags.includes('p')) {
             sound = 'promotion';
         }
         const newFen = game.fen();
@@ -114,25 +210,23 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             turn: newTurn,
             lastMove: lastMove
         };
-        // Clock updates
         if (gameData.clocks && firestoreGameData.timeControl) {
             const now = Date.now();
             const lastTick = gameData.clocks.lastTick;
-            const elapsed = (now - lastTick) / 1000; // in seconds
-            const playerWhoMoved = game.turn() === 'b' ? 'white' : 'black'; // The player who just moved
-            //const playerToUpdate = game.turn() === 'b' ? 'white' : 'black';
-            const increment = gameData.clocks.increment || 0;
+            const elapsed = (now - lastTick) / 1000;
+            const playerWhoMoved = game.turn() === 'b' ? 'white' : 'black';
+            const increment = firestoreGameData.timeControl.increment / 1000 || 0;
             let newTime = gameData.clocks[playerWhoMoved] - elapsed + increment;
             if (newTime < 0)
                 newTime = 0;
             updates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
             updates[`clocks/${playerWhoMoved}`] = newTime;
-            updates['clocks/running'] = newTurn; // The next player's clock is now running
+            updates['clocks/running'] = newTurn;
         }
         await gameRef.update(updates);
         if (game.isGameOver()) {
             let reason = 'Game Over';
-            let winnerId = newTurn === 'w' ? 'b' : 'w'; // The loser is the one whose turn it would be
+            let winnerId = newTurn === 'w' ? 'b' : 'w';
             if (game.isCheckmate()) {
                 reason = 'Checkmate';
             }
@@ -148,8 +242,17 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
                 status: 'completed',
                 winnerId: winnerId,
                 reason: reason,
-                fen: newFen, // Store final FEN
+                fen: newFen,
             });
+        }
+        else if (isBotGame && newTurn !== playerColor) {
+            // It's the bot's turn now.
+            // Use a timeout to make the bot's move feel more natural
+            setTimeout(() => {
+                handleBotMove(gameId, firestoreGameRef, firestoreGameData).catch(err => {
+                    console.error("Error in handleBotMove:", err);
+                });
+            }, 1000);
         }
         return { status: 'success', fen: newFen, turn: newTurn, lastMove };
     }
@@ -168,11 +271,9 @@ exports.initializeLiveGame = functions.firestore
     const afterData = change.after.data();
     const beforeData = change.before.data();
     console.log(`initializeLiveGame fired for game: ${gameId}`);
-    // If the game is deleted, or not in progress, do nothing
     if (!afterData || afterData.status !== 'inprogress') {
         return null;
     }
-    // Only initialize if the status *just* changed to 'inprogress'
     if ((beforeData === null || beforeData === void 0 ? void 0 : beforeData.status) === 'inprogress') {
         console.log(`Game ${gameId} is already in progress. Skipping initialization.`);
         return null;
@@ -180,7 +281,6 @@ exports.initializeLiveGame = functions.firestore
     const liveGameRef = db.ref(`liveGames/${gameId}`);
     const snapshot = await liveGameRef.once('value');
     const existing = snapshot.val();
-    // Only skip if clocks already exist
     if (existing && existing.clocks) {
         console.log(`Game ${gameId} already has clocks. Skipping.`);
         return null;
@@ -190,10 +290,9 @@ exports.initializeLiveGame = functions.firestore
         fen: startingFen,
         turn: 'w'
     };
-    // Initialize clocks if time control is set
-    const timeControl = afterData.timeControl;
+    const timeControl = afterData.timeControl || { initial: 300000, increment: 0 };
     console.log(`timeControl for game ${gameId}:`, timeControl);
-    if (timeControl && typeof timeControl.initial === 'number') {
+    if (typeof timeControl.initial === 'number') {
         const initialSeconds = Math.floor(timeControl.initial / 1000);
         const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
         liveGameState.clocks = {
@@ -207,7 +306,7 @@ exports.initializeLiveGame = functions.firestore
     }
     console.log(`Initializing live game at /liveGames/${gameId}`);
     await liveGameRef.update(liveGameState);
-    console.log(`Clocks written for game ${gameId}`);
+    console.log(`Live game created for game ${gameId}`);
     return null;
 });
 exports.handleGameAction = functions.https.onCall(async (data, context) => {
@@ -230,7 +329,14 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
         if (gameData.status === 'completed') {
             throw new functions.https.HttpsError('failed-precondition', 'Game is already completed.');
         }
-        const playerColor = uid === gameData.player1Id ? 'w' : 'b';
+        if (gameData.isBotGame) {
+            throw new functions.https.HttpsError('failed-precondition', 'Game actions are not allowed in bot games.');
+        }
+        //const playerColor = uid === gameData.player1Id ? firestoreGameData.player1Color || 'w' : (firestoreGameData.player1Color === 'w' ? 'b' : 'w');
+        const playerColor = uid === gameData.player1Id
+            ? gameData.player1Color || 'w'
+            : (gameData.player1Color === 'w' ? 'b' : 'w');
+        const opponentId = uid === gameData.player1Id ? gameData.player2Id : gameData.player1Id;
         const opponentColor = playerColor === 'w' ? 'b' : 'w';
         switch (action) {
             case 'resign':
@@ -241,8 +347,7 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
                 });
             case 'draw':
                 const currentDrawOffer = gameData.drawOffer;
-                // If opponent offered a draw, accept it.
-                if (currentDrawOffer === opponentColor) {
+                if (currentDrawOffer === opponentId) {
                     return gameRef.update({
                         status: 'completed',
                         winnerId: 'd',
@@ -250,28 +355,26 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
                         drawOffer: null,
                         lastDrawAction: {
                             type: 'accepted',
-                            by: playerColor,
+                            by: uid,
                             at: admin.firestore.FieldValue.serverTimestamp()
                         }
                     });
                 }
-                // If player already offered a draw, do nothing.
-                else if (currentDrawOffer === playerColor) {
+                else if (currentDrawOffer === uid) {
                     throw new functions.https.HttpsError('failed-precondition', 'You have already offered a draw.');
                 }
-                // Otherwise, offer a draw.
                 else {
                     return gameRef.update({
-                        drawOffer: playerColor
+                        drawOffer: uid
                     });
                 }
             case 'decline-draw':
-                if (gameData.drawOffer === opponentColor) {
+                if (gameData.drawOffer === opponentId) {
                     return gameRef.update({
                         drawOffer: null,
                         lastDrawAction: {
                             type: 'declined',
-                            by: playerColor,
+                            by: uid,
                             at: admin.firestore.FieldValue.serverTimestamp()
                         }
                     });
@@ -280,7 +383,6 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
                     throw new functions.https.HttpsError('failed-precondition', 'No draw offer to decline.');
                 }
             case 'abort':
-                // Logic for aborting a game (e.g., if less than 2 moves per side)
                 const liveGameSnapshot = await db.ref(`/liveGames/${gameId}`).once('value');
                 const liveGame = new chess_js_1.Chess((_a = liveGameSnapshot.val()) === null || _a === void 0 ? void 0 : _a.fen);
                 if (liveGame.history().length > 4) { // 2 full moves

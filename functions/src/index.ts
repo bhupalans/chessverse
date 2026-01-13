@@ -1,7 +1,7 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { Chess, Move, PieceSymbol, Square } from 'chess.js';
+import { Chess, Move } from 'chess.js';
 
 admin.initializeApp();
 
@@ -361,7 +361,12 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
              throw new functions.https.HttpsError('failed-precondition', 'Game actions are not allowed in bot games.');
         }
 
-        const playerColor = uid === gameData.player1Id ? firestoreGameData.player1Color || 'w' : (firestoreGameData.player1Color === 'w' ? 'b' : 'w');
+        //const playerColor = uid === gameData.player1Id ? firestoreGameData.player1Color || 'w' : (firestoreGameData.player1Color === 'w' ? 'b' : 'w');
+        const playerColor =
+  uid === gameData.player1Id
+    ? gameData.player1Color || 'w'
+    : (gameData.player1Color === 'w' ? 'b' : 'w');
+
         const opponentId = uid === gameData.player1Id ? gameData.player2Id : gameData.player1Id;
         const opponentColor = playerColor === 'w' ? 'b' : 'w';
 
