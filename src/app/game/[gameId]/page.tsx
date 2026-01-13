@@ -106,9 +106,12 @@ function GamePageContent() {
         setLiveGameState(data);
         if (data.clocks) {
             setDisplayClocks({ white: data.clocks.white, black: data.clocks.black });
+        } else {
+            setDisplayClocks(null);
         }
       } else if (!isFirestoreGameLoading && firestoreGame?.status !== 'inprogress') {
          setLiveGameState({ fen: new Chess().fen(), turn: 'w'});
+         setDisplayClocks(null);
       } else {
         toast({
           variant: 'destructive',
@@ -129,36 +132,6 @@ function GamePageContent() {
 
     return () => unsubscribe();
   }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
-
-  // Clock ticking effect
-  useEffect(() => {
-    if (!liveGameState?.clocks || finalGameOver) return;
-  
-    const tick = () => {
-      const now = Date.now();
-      const { white, black, lastTick, running } = liveGameState.clocks;
-  
-      if (running) {
-        const elapsed = (now - lastTick); // Milliseconds
-  
-        let newWhite = white * 1000;
-        let newBlack = black * 1000;
-  
-        if (running === 'w') {
-          newWhite = Math.max(0, (white * 1000) - elapsed);
-        } else if (running === 'b') {
-          newBlack = Math.max(0, (black * 1000) - elapsed);
-        }
-        setDisplayClocks({ white: newWhite, black: newBlack });
-      } else {
-         setDisplayClocks({ white: white * 1000, black: black * 1000 });
-      }
-    };
-  
-    tick(); // Initial tick
-    const id = setInterval(tick, 250);
-    return () => clearInterval(id);
-  }, [liveGameState?.clocks, finalGameOver]);
 
   const playerColor = useMemo<Color>(() => {
     if (isBotGame || !user || !firestoreGame) return 'w';
@@ -429,9 +402,20 @@ function GamePageContent() {
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = game.turn();
   const drawOfferedToMe = !isBotGame && firestoreGame?.drawOffer === opponentColor;
+  const isRunning = liveGameState?.clocks?.running;
 
   const topPlayerTime = displayClocks ? (topPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
   const bottomPlayerTime = displayClocks ? (bottomPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
+  
+  const topPlayerIsTurn = gameStarted && !finalGameOver && (
+    (topPlayer === whitePlayer && currentTurn === 'w') || 
+    (topPlayer === blackPlayer && currentTurn === 'b')
+  );
+  
+  const bottomPlayerIsTurn = gameStarted && !finalGameOver && (
+    (bottomPlayer === whitePlayer && currentTurn === 'w') || 
+    (bottomPlayer === blackPlayer && currentTurn === 'b')
+  );
 
 
   if (isGameLoading || arePlayersLoading || !gameFen) {
@@ -450,9 +434,10 @@ function GamePageContent() {
               elo={topPlayer.eloRating} 
               avatar={topPlayer.avatarUrl}
               isBot={isBotGame && topPlayer.id === 'bot'} 
-              isTurn={gameStarted && currentTurn === (topPlayer === whitePlayer ? 'w' : 'b') && !finalGameOver} 
+              isTurn={topPlayerIsTurn} 
               color={topPlayer === whitePlayer ? 'White' : 'Black'}
               time={topPlayerTime}
+              firestoreGame={firestoreGame}
             />
           )}
           <div className="relative">
@@ -518,11 +503,12 @@ function GamePageContent() {
                 elo={bottomPlayer.eloRating} 
                 avatar={bottomPlayer.avatarUrl}
                 isBot={isBotGame && bottomPlayer.id === 'bot'}
-                isTurn={gameStarted && currentTurn === playerColor && !finalGameOver} 
+                isTurn={bottomPlayerIsTurn} 
                 color={playerColor === 'w' ? 'White' : 'Black'}
                 drawOffered={drawOfferedToMe}
                 onDrawResponse={handleDrawResponse}
                 time={bottomPlayerTime}
+                firestoreGame={firestoreGame}
               />
           )}
           <div className="p-4 flex items-center justify-between bg-card rounded-lg">
@@ -561,3 +547,4 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
