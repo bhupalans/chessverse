@@ -151,8 +151,10 @@ function GamePageContent() {
 
       if (clocks.running === 'w') {
         newWhite = Math.max(0, clocks.white - elapsed);
+        newBlack = clocks.black;
       } else if (clocks.running === 'b') {
         newBlack = Math.max(0, clocks.black - elapsed);
+        newWhite = clocks.white;
       }
       
       setDisplayClocks({ white: newWhite, black: newBlack });
@@ -577,5 +579,7 @@ export default function GamePage() {
   );
 }
 
+
+    
 
     

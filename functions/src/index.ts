@@ -50,6 +50,24 @@ export const submitMove = functions.https.onCall(async (data, context) => {
              throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
         }
 
+        // --- Timeout Check ---
+        if(gameData.clocks && firestoreGameData.timeControl) {
+            const now = Date.now();
+            const lastTick = gameData.clocks.lastTick;
+            const elapsed = (now - lastTick) / 1000;
+            const playerTime = playerColor === 'w' ? gameData.clocks.white : gameData.clocks.black;
+            
+            if (playerTime - elapsed <= 0) {
+                 await firestoreGameRef.update({
+                    status: 'completed',
+                    winnerId: playerColor === 'w' ? 'b' : 'w', // Opponent wins
+                    reason: 'timeout',
+                });
+                // No need to update RTDB as game is over
+                return { status: 'timeout' };
+            }
+        }
+
         const move: Move | null = game.move({ from, to, promotion });
 
         if (move === null) {
@@ -91,14 +109,15 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             const lastTick = gameData.clocks.lastTick;
             const elapsed = (now - lastTick) / 1000; // in seconds
             
-            const playerToUpdate = game.turn() === 'w' ? 'black' : 'white';
-            const increment = Math.floor((firestoreGameData.timeControl.increment || 0) / 1000);
+            const playerToUpdate = game.turn() === 'b' ? 'white' : 'black'; // This is the player who just moved
+            const increment = gameData.clocks.increment || 0;
             
             let newTime = gameData.clocks[playerToUpdate] - elapsed + increment;
             if (newTime < 0) newTime = 0;
             
             updates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
             updates[`clocks/${playerToUpdate}`] = newTime;
+            updates['clocks/running'] = newTurn; // The next player's clock is now running
         }
 
 
@@ -106,7 +125,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
         
         if (game.isGameOver()) {
             let reason = 'Game Over';
-            let winnerId = newTurn === 'w' ? 'b' : 'w'; // The loser is the one whose turn it would be
+            let winnerId: 'w' | 'b' | 'd' = newTurn === 'w' ? 'b' : 'w'; // The loser is the one whose turn it would be
             if(game.isCheckmate()) {
                 reason = 'Checkmate';
             } else if (game.isStalemate()) {
@@ -178,22 +197,22 @@ export const initializeLiveGame = functions.firestore
         // Initialize clocks if time control is set
         const timeControl = afterData.timeControl;
         console.log(`timeControl for game ${gameId}:`, timeControl);
-if (timeControl && typeof timeControl.initial === 'number') {
-    const initialSeconds = Math.floor(timeControl.initial / 1000);
-    const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
+        if (timeControl && typeof timeControl.initial === 'number') {
+            const initialSeconds = Math.floor(timeControl.initial / 1000);
+            const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
 
-    liveGameState.clocks = {
-        white: initialSeconds,
-        black: initialSeconds,
-        running: 'w',
-        lastTick: admin.database.ServerValue.TIMESTAMP,
-        increment: incrementSeconds
-    };
+            liveGameState.clocks = {
+                white: initialSeconds,
+                black: initialSeconds,
+                running: 'w',
+                lastTick: admin.database.ServerValue.TIMESTAMP,
+                increment: incrementSeconds
+            };
 
-    console.log(
-      `Clocks initialized for game ${gameId}: ${initialSeconds}s + ${incrementSeconds}s`
-    );
-}
+            console.log(
+              `Clocks initialized for game ${gameId}: ${initialSeconds}s + ${incrementSeconds}s`
+            );
+        }
 
 
         console.log(`Initializing live game at /liveGames/${gameId}`);
@@ -305,5 +324,7 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
+
+    
 
     
