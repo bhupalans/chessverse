@@ -430,8 +430,8 @@ function GamePageContent() {
   const currentTurn = game.turn();
   const drawOfferedToMe = !isBotGame && firestoreGame?.drawOffer === opponentColor;
 
-  const topPlayerTime = displayClocks ? (playerColor === 'w' ? displayClocks.black : displayClocks.white) : null;
-  const bottomPlayerTime = displayClocks ? (playerColor === 'w' ? displayClocks.white : displayClocks.black) : null;
+  const topPlayerTime = displayClocks ? (topPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
+  const bottomPlayerTime = displayClocks ? (bottomPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
 
 
   if (isGameLoading || arePlayersLoading || !gameFen) {
@@ -450,8 +450,8 @@ function GamePageContent() {
               elo={topPlayer.eloRating} 
               avatar={topPlayer.avatarUrl}
               isBot={isBotGame && topPlayer.id === 'bot'} 
-              isTurn={gameStarted && currentTurn === opponentColor && !finalGameOver} 
-              color={playerColor === 'w' ? 'Black' : 'White'}
+              isTurn={gameStarted && currentTurn === (topPlayer === whitePlayer ? 'w' : 'b') && !finalGameOver} 
+              color={topPlayer === whitePlayer ? 'White' : 'Black'}
               time={topPlayerTime}
             />
           )}
