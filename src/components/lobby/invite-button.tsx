@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -80,6 +81,10 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
         createdAt: serverTimestamp(),
         fen: newGame.fen(),
         turn: 'w',
+        timeControl: {
+          initial: 300000, // 5 minutes
+          increment: 0,
+        },
       });
       
       setGameId(newGameDoc.id);

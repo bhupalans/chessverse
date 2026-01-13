@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -55,6 +56,10 @@ export function CreateGameDialog() {
         createdAt: serverTimestamp(),
         fen: newGame.fen(),
         turn: 'w',
+        timeControl: {
+          initial: 300000, // 5 minutes
+          increment: 0,
+        },
       });
       router.push(`/game/${newGameDoc.id}`);
     } catch (error) {
