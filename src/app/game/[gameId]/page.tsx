@@ -133,6 +133,35 @@ function GamePageContent() {
     return () => unsubscribe();
   }, [realtimeDB, gameId, isBotGame, toast, firestoreGame, isFirestoreGameLoading, playSound]);
 
+  useEffect(() => {
+    if (finalGameOver || !liveGameState?.clocks) {
+      if (liveGameState?.clocks) {
+        setDisplayClocks({ white: liveGameState.clocks.white, black: liveGameState.clocks.black });
+      }
+      return;
+    };
+
+    const interval = setInterval(() => {
+      const { clocks } = liveGameState;
+      if (!clocks || !clocks.running || !clocks.lastTick) return;
+
+      const elapsed = (Date.now() - clocks.lastTick) / 1000;
+      let newWhite = clocks.white;
+      let newBlack = clocks.black;
+
+      if (clocks.running === 'w') {
+        newWhite = Math.max(0, clocks.white - elapsed);
+      } else if (clocks.running === 'b') {
+        newBlack = Math.max(0, clocks.black - elapsed);
+      }
+      
+      setDisplayClocks({ white: newWhite, black: newBlack });
+
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [liveGameState?.clocks, finalGameOver]);
+
   const playerColor = useMemo<Color>(() => {
     if (isBotGame || !user || !firestoreGame) return 'w';
     return firestoreGame.player1Id === user.uid ? 'w' : 'b';
@@ -548,3 +577,5 @@ export default function GamePage() {
   );
 }
 
+
+    
