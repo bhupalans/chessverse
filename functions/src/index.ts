@@ -109,14 +109,15 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             const lastTick = gameData.clocks.lastTick;
             const elapsed = (now - lastTick) / 1000; // in seconds
             
-            const playerToUpdate = game.turn() === 'b' ? 'white' : 'black'; // This is the player who just moved
+            const playerWhoMoved = game.turn() === 'b' ? 'white' : 'black'; // The player who just moved
+            const playerToUpdate = game.turn() === 'b' ? 'white' : 'black';
             const increment = gameData.clocks.increment || 0;
             
-            let newTime = gameData.clocks[playerToUpdate] - elapsed + increment;
+            let newTime = gameData.clocks[playerWhoMoved] - elapsed + increment;
             if (newTime < 0) newTime = 0;
             
             updates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
-            updates[`clocks/${playerToUpdate}`] = newTime;
+            updates[`clocks/${playerWhoMoved}`] = newTime;
             updates['clocks/running'] = newTurn; // The next player's clock is now running
         }
 
@@ -324,7 +325,3 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
-
-    
-
-    

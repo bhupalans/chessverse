@@ -136,6 +136,7 @@ function GamePageContent() {
   useEffect(() => {
     if (finalGameOver || !liveGameState?.clocks) {
       if (liveGameState?.clocks) {
+        // Ensure final time is displayed when game is over
         setDisplayClocks({ white: liveGameState.clocks.white, black: liveGameState.clocks.black });
       }
       return;
@@ -148,13 +149,13 @@ function GamePageContent() {
       const elapsed = (Date.now() - clocks.lastTick) / 1000;
       let newWhite = clocks.white;
       let newBlack = clocks.black;
-
+      
       if (clocks.running === 'w') {
         newWhite = Math.max(0, clocks.white - elapsed);
-        newBlack = clocks.black;
+        newBlack = clocks.black; // Keep black clock frozen
       } else if (clocks.running === 'b') {
         newBlack = Math.max(0, clocks.black - elapsed);
-        newWhite = clocks.white;
+        newWhite = clocks.white; // Keep white clock frozen
       }
       
       setDisplayClocks({ white: newWhite, black: newBlack });
@@ -433,7 +434,6 @@ function GamePageContent() {
   const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
   const currentTurn = game.turn();
   const drawOfferedToMe = !isBotGame && firestoreGame?.drawOffer === opponentColor;
-  const isRunning = liveGameState?.clocks?.running;
 
   const topPlayerTime = displayClocks ? (topPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
   const bottomPlayerTime = displayClocks ? (bottomPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
@@ -578,8 +578,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-
-    
-
-    
