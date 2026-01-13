@@ -15,12 +15,12 @@ import {
 import { Bot, PlusCircle, User as UserIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth, useFirestore, useUser } from '@/firebase';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, where, getDocs, limit, updateDoc, doc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Chess } from 'chess.js';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import type { TimeControl } from '@/lib/types';
+import type { TimeControl, Game } from '@/lib/types';
 
 
 const timeControlPresets: { name: string; value: TimeControl }[] = [
@@ -31,6 +31,7 @@ const timeControlPresets: { name: string; value: TimeControl }[] = [
 
 export function CreateGameDialog() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isFindingGame, setIsFindingGame] = useState(false);
   const [selectedTimeControl, setSelectedTimeControl] = useState<TimeControl>(timeControlPresets[1].value);
   const router = useRouter();
   const firestore = useFirestore();
@@ -51,35 +52,82 @@ export function CreateGameDialog() {
       });
       return;
     }
+    
+    setIsFindingGame(true);
 
     try {
       const gamesCollection = collection(firestore, 'games');
-      const newGame = new Chess();
-      const newGameDoc = await addDoc(gamesCollection, {
-        player1Id: user.uid,
-        player1: {
-          id: user.uid,
-          username: user.displayName || 'Anonymous',
-          avatarUrl: user.photoURL || '',
-          eloRating: 1200, // Placeholder ELO
-        },
-        status: 'waiting',
-        createdAt: serverTimestamp(),
-        fen: newGame.fen(),
-        turn: 'w',
-        timeControl: selectedTimeControl,
-      });
-      router.push(`/game/${newGameDoc.id}`);
+      
+      // 1. Query for a waiting game with the same time control
+      const q = query(
+        gamesCollection,
+        where('status', '==', 'waiting'),
+        where('timeControl.initial', '==', selectedTimeControl.initial),
+        where('timeControl.increment', '==', selectedTimeControl.increment),
+        where('player1Id', '!=', user.uid), // Can't join your own game
+        limit(1)
+      );
+      
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        // 2. If a game exists, join it
+        const gameToJoin = querySnapshot.docs[0];
+        const gameDocRef = doc(firestore, 'games', gameToJoin.id);
+
+        await updateDoc(gameDocRef, {
+          player2Id: user.uid,
+          player2: {
+            id: user.uid,
+            username: user.displayName || 'Anonymous',
+            avatarUrl: user.photoURL || '',
+            eloRating: 1200, // Placeholder ELO
+          },
+          status: 'inprogress',
+        });
+        
+        toast({
+          title: "Opponent Found!",
+          description: "Starting your game now."
+        });
+        router.push(`/game/${gameToJoin.id}`);
+
+      } else {
+        // 3. If no game exists, create a new one
+        const newGame = new Chess();
+        const newGameDoc = await addDoc(gamesCollection, {
+          player1Id: user.uid,
+          player1: {
+            id: user.uid,
+            username: user.displayName || 'Anonymous',
+            avatarUrl: user.photoURL || '',
+            eloRating: 1200, // Placeholder ELO
+          },
+          status: 'waiting',
+          createdAt: serverTimestamp(),
+          fen: newGame.fen(),
+          turn: 'w',
+          timeControl: selectedTimeControl,
+        });
+
+        toast({
+            title: "Game Created",
+            description: "Waiting for an opponent to join."
+        })
+        router.push(`/game/${newGameDoc.id}`);
+      }
+
     } catch (error) {
-      console.error('Error creating game:', error);
+      console.error('Error creating or joining game:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Could not create game. Please try again.',
+        description: 'Could not create or join a game. Please try again.',
       });
+    } finally {
+       setIsFindingGame(false);
+       setIsOpen(false);
     }
-
-    setIsOpen(false);
   };
 
   return (
@@ -103,6 +151,7 @@ export function CreateGameDialog() {
               <RadioGroup
                 defaultValue={JSON.stringify(selectedTimeControl)}
                 onValueChange={(value) => setSelectedTimeControl(JSON.parse(value))}
+                disabled={isFindingGame}
               >
                 {timeControlPresets.map((preset) => (
                   <div key={preset.name} className="flex items-center space-x-2">
@@ -125,10 +174,19 @@ export function CreateGameDialog() {
                 variant="outline"
                 className="h-24 flex-col"
                 onClick={handleCreatePlayerGame}
-                disabled={!user}
+                disabled={!user || isFindingGame}
               >
-                <UserIcon className="h-8 w-8 mb-2" />
-                Play vs Player
+                {isFindingGame ? (
+                  <>
+                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+                     Finding Match...
+                  </>
+                ) : (
+                  <>
+                    <UserIcon className="h-8 w-8 mb-2" />
+                    Play vs Player
+                  </>
+                )}
               </Button>
             </div>
         </div>
@@ -140,5 +198,3 @@ export function CreateGameDialog() {
     </Dialog>
   );
 }
-
-    
