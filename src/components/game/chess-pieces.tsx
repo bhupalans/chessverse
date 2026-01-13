@@ -28,10 +28,11 @@ export function ChessPieces({
   winner,
   kingPositions,
   lastMove,
+  orientation,
 }: {
   fen: string;
-  onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => boolean;
-  playerColor: Color;
+  onMove: (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => Promise<boolean>;
+  playerColor: Color | null;
   isGameOver: boolean;
   turn: Color;
   gameStarted: boolean;
@@ -39,6 +40,7 @@ export function ChessPieces({
   winner: 'w' | 'b' | 'd' | null;
   kingPositions: { w: ChessJsSquare, b: ChessJsSquare } | null;
   lastMove: LastMoveInfo | null;
+  orientation: 'white' | 'black';
 }) {
   const { toast } = useToast();
   const [selectedSquare, setSelectedSquare] = useState<ChessJsSquare | null>(null);
@@ -54,8 +56,8 @@ export function ChessPieces({
 
   const board = useMemo(() => {
     const b = game.board();
-    return playerColor === 'w' ? b : b.slice().reverse().map(row => row.slice().reverse());
-  }, [game, playerColor]);
+    return orientation === 'white' ? b : b.slice().reverse().map(row => row.slice().reverse());
+  }, [game, orientation]);
 
   const validMovesForSelectedPiece = useMemo(() => {
     if (!selectedSquare) return new Set();
@@ -69,13 +71,18 @@ export function ChessPieces({
     const col = Math.floor((e.clientX - rect.left) / squareSize);
     const row = Math.floor((e.clientY - rect.top) / squareSize);
 
-    if (playerColor === 'w') {
+    if (orientation === 'white') {
       return `${String.fromCharCode(97 + col)}${8 - row}` as ChessJsSquare;
     }
     return `${String.fromCharCode(97 + (7 - col))}${row + 1}` as ChessJsSquare;
   };
 
   const handleBoardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!playerColor) { // Spectator
+      toast({ title: "Spectator Mode", description: "You can watch but not play."});
+      return;
+    }
+
     if (!gameStarted) {
       toast({
         title: 'Game Not Started',
@@ -99,19 +106,30 @@ export function ChessPieces({
     const square = getSquareFromEvent(e);
 
     if (selectedSquare) {
-      onMove({
-        from: selectedSquare,
-        to: square,
-        promotion: 'q', // Always promote to queen for simplicity
-      });
-      setSelectedSquare(null);
+      const isMoveValid = validMovesForSelectedPiece.has(square);
+      if(isMoveValid) {
+        onMove({
+          from: selectedSquare,
+          to: square,
+          promotion: 'q', // Always promote to queen for simplicity
+        });
+        setSelectedSquare(null);
+      } else if (square === selectedSquare) {
+        setSelectedSquare(null); // Deselect if clicking the same square
+      } else {
+        const piece = game.get(square);
+        if (piece && piece.color === playerColor) {
+           setSelectedSquare(square); // Select a different piece of the same color
+        } else {
+          // Attempted invalid move, just deselect
+          setSelectedSquare(null);
+        }
+      }
 
     } else {
       const piece = game.get(square);
       if (piece && piece.color === playerColor) {
         setSelectedSquare(square);
-      } else if (piece) {
-        toast({ title: "Not your piece", description: "You can't move your opponent's pieces." });
       }
     }
   };
@@ -122,21 +140,23 @@ export function ChessPieces({
     const file = square.charCodeAt(0) - 97; // a=0, b=1, ...
     const rank = parseInt(square.charAt(1), 10);
     
-    if (playerColor === 'w') {
+    if (orientation === 'white') {
         return { row: 8 - rank, col: file };
     } else {
         return { row: rank - 1, col: 7 - file };
     }
   };
+  
+  const canMove = playerColor && playerColor === turn && gameStarted && !isGameOver;
 
   return (
     <div 
       className={cn(
         "absolute inset-0", 
         !gameStarted && "opacity-70",
-        (gameStarted && !isGameOver && turn === playerColor) && 'cursor-pointer'
+        canMove && 'cursor-pointer'
       )}
-      onClick={handleBoardClick}
+      onClick={canMove ? handleBoardClick : undefined}
     >
       <div className="relative w-full h-full">
         {/* Render highlight squares */}
@@ -146,9 +166,16 @@ export function ChessPieces({
         
         {Array.from(validMovesForSelectedPiece).map((move) => {
             const { row, col } = getSquareCoords(move as ChessJsSquare);
-            return <div key={move} className="absolute w-[12.5%] h-[12.5%] flex items-center justify-center" style={{ top: `${row * 12.5}%`, left: `${col * 12.5}%` }}>
-                <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
-            </div>
+            const pieceAtTarget = game.get(move as ChessJsSquare);
+            return (
+              <div key={move} className="absolute w-[12.5%] h-[12.5%] flex items-center justify-center" style={{ top: `${row * 12.5}%`, left: `${col * 12.5}%` }}>
+                {pieceAtTarget ? (
+                   <div className="h-full w-full rounded-full border-[6px] border-yellow-500/50 box-border"></div>
+                ) : (
+                   <div className="h-1/3 w-1/3 rounded-full bg-yellow-500/50"></div>
+                )}
+              </div>
+            )
         })}
         
         {/* Render pieces */}
@@ -181,3 +208,5 @@ export function ChessPieces({
     </div>
   );
 }
+
+    

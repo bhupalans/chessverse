@@ -8,7 +8,7 @@ import { Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
 import { Button } from '@/components/ui/button';
-import { Flag, Play, Swords, Crown, Handshake } from 'lucide-react';
+import { Flag, Swords, Crown, Handshake } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import type { User as UserType, Game as GameType, LastMove, LiveGame } from '@/lib/types';
@@ -29,6 +29,7 @@ function GamePageContent() {
   
   const [liveGameState, setLiveGameState] = useState<LiveGame | null>(null);
   const [displayClocks, setDisplayClocks] = useState<{ white: number; black: number } | null>(null);
+  const [previousFen, setPreviousFen] = useState<string | null>(null);
   
   const gameDocRef = useMemoFirebase(() => {
     if (!gameId || !firestore) return null;
@@ -36,15 +37,6 @@ function GamePageContent() {
   }, [firestore, gameId]);
 
   const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
-
-  
-  const [gameStarted, setGameStarted] = useState(false);
-  const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
-  const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
-  const [kingPositions, setKingPositions] = useState<{ w: ChessJsSquare, b: ChessJsSquare } | null>(null);
-  const [lastMove, setLastMove] = useState<LastMove | null>(null);
-  
-  const { toast } = useToast();
   
   const gameFen = liveGameState?.fen;
   
@@ -58,8 +50,16 @@ function GamePageContent() {
     }
   }, [gameFen]);
 
+  const [gameStarted, setGameStarted] = useState(false);
+  const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
+  const [winnerColor, setWinnerColor] = useState<'w' | 'b' | 'd' | null>(null);
+  const [kingPositions, setKingPositions] = useState<{ w: ChessJsSquare, b: ChessJsSquare } | null>(null);
+  const [lastMove, setLastMove] = useState<LastMove | null>(null);
+  
+  const { toast } = useToast();
+  
   const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
-
+  
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal' | 'castle' | 'promotion') => {
     if (typeof window !== 'undefined') {
       try {
@@ -79,12 +79,6 @@ function GamePageContent() {
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        if(data.lastMove && (!lastMove || data.lastMove.at !== lastMove.at)) {
-            if(data.lastMove.sound) {
-                playSound(data.lastMove.sound);
-            }
-            setLastMove(data.lastMove);
-        }
         setLiveGameState(data);
       } else if (!isFirestoreGameLoading && firestoreGame?.status !== 'inprogress') {
          setLiveGameState({ fen: new Chess().fen(), turn: 'w'});
@@ -100,7 +94,21 @@ function GamePageContent() {
     });
 
     return () => unsubscribe();
-  }, [realtimeDB, gameId, toast, firestoreGame, isFirestoreGameLoading, playSound, lastMove]);
+  }, [realtimeDB, gameId, toast, firestoreGame, isFirestoreGameLoading]);
+
+  // Sound playing effect
+  useEffect(() => {
+    if (liveGameState?.fen && liveGameState.fen !== previousFen) {
+      if (previousFen !== null) { // Don't play sound on initial load
+          const soundToPlay = liveGameState.lastMove?.sound || 'move';
+          playSound(soundToPlay);
+      }
+      setPreviousFen(liveGameState.fen);
+      if(liveGameState.lastMove) {
+        setLastMove(liveGameState.lastMove);
+      }
+    }
+  }, [liveGameState, previousFen, playSound]);
 
 
   useEffect(() => {
@@ -121,8 +129,14 @@ function GamePageContent() {
 
         if (clocks.running === 'w') {
             newWhite = Math.max(0, clocks.white - elapsed);
-        } else if (clocks.running === 'b') {
+        } else {
+             newWhite = clocks.white
+        }
+        
+        if (clocks.running === 'b') {
             newBlack = Math.max(0, clocks.black - elapsed);
+        } else {
+            newBlack = clocks.black
         }
         
         setDisplayClocks({ white: newWhite, black: newBlack });
@@ -132,12 +146,15 @@ function GamePageContent() {
     return () => clearInterval(interval);
   }, [liveGameState, finalGameOver]);
 
-  const playerColor = useMemo<Color>(() => {
-    if (!user || !firestoreGame) return 'w'; 
+  const myColor = useMemo<'w' | 'b' | null>(() => {
+    if (!user || !firestoreGame) return null; // Spectator by default
     if (firestoreGame.player1Id === user.uid) {
-        return firestoreGame.player1Color || 'w';
+      return firestoreGame.player1Color || 'w';
     }
-    return firestoreGame.player1Color === 'w' ? 'b' : 'w';
+    if (firestoreGame.player2Id === user.uid) {
+      return (firestoreGame.player1Color || 'w') === 'w' ? 'b' : 'w';
+    }
+    return null; // Is a spectator
   }, [user, firestoreGame]);
   
   const findKingPositions = useCallback((gameInstance: Chess) => {
@@ -204,6 +221,14 @@ function GamePageContent() {
   }, [firestoreGame, gameStarted]);
 
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
+      if (!myColor || myColor !== game.turn()) {
+        toast({
+          variant: 'destructive',
+          title: "Not your turn",
+          description: "Please wait for your opponent to move.",
+        });
+        return false;
+      }
       try {
         const functions = getFunctions();
         const submitMove = httpsCallable(functions, 'submitMove');
@@ -273,8 +298,11 @@ function GamePageContent() {
 
   const opponentId = firestoreGame?.player1Id === user?.uid ? firestoreGame?.player2Id : firestoreGame?.player1Id;
 
-  const topPlayer = playerColor === 'w' ? blackPlayer : whitePlayer;
-  const bottomPlayer = playerColor === 'w' ? whitePlayer : blackPlayer;
+  const boardOrientation = myColor === 'b' ? 'black' : 'white';
+
+  const topPlayer = boardOrientation === 'white' ? blackPlayer : whitePlayer;
+  const bottomPlayer = boardOrientation === 'white' ? whitePlayer : blackPlayer;
+  
   const currentTurn = game.turn();
   const drawOfferedToMe = !firestoreGame?.isBotGame && firestoreGame?.drawOffer === opponentId;
 
@@ -315,11 +343,11 @@ function GamePageContent() {
             />
           )}
           <div className="relative">
-            <Chessboard playerColor={playerColor}>
+            <Chessboard orientation={boardOrientation}>
                 <ChessPieces
                     fen={gameFen}
                     onMove={makeMove}
-                    playerColor={playerColor}
+                    playerColor={myColor}
                     isGameOver={finalGameOver}
                     turn={currentTurn}
                     gameStarted={gameStarted}
@@ -327,6 +355,7 @@ function GamePageContent() {
                     winner={winnerColor}
                     kingPositions={kingPositions}
                     lastMove={lastMove}
+                    orientation={boardOrientation}
                 />
             </Chessboard>
             {gameOverState && (
@@ -375,7 +404,7 @@ function GamePageContent() {
           )}
           <div className="p-4 flex items-center justify-between bg-card rounded-lg">
             <div className="grid grid-cols-2 gap-2 flex-1">
-              {gameStarted ? (
+              {gameStarted && myColor ? (
                 <>
                   <Button variant="outline" onClick={handleResign} disabled={finalGameOver}>
                     <Flag className="mr-2 h-4 w-4" /> Resign
@@ -385,6 +414,8 @@ function GamePageContent() {
                     Offer Draw
                   </Button>
                 </>
+              ) : gameStarted && !myColor ? (
+                <div className="col-span-2 text-center text-muted-foreground">Spectator Mode</div>
               ) : (
                  <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
               )}
@@ -407,3 +438,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    

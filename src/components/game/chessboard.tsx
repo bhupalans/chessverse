@@ -1,20 +1,20 @@
+
 'use client';
 import { useContext } from 'react';
 import { cn } from '@/lib/utils';
-import { type Color } from 'chess.js';
 import { ThemeContext } from '@/context/theme-context';
 
 export function Chessboard({
-  playerColor,
+  orientation,
   children,
 }: {
-  playerColor: Color;
+  orientation: 'white' | 'black';
   children: React.ReactNode;
 }) {
   const { theme } = useContext(ThemeContext);
 
-  const ranks = playerColor === 'w' ? ['8', '7', '6', '5', '4', '3', '2', '1'] : ['1', '2', '3', '4', '5', '6', '7', '8'];
-  const files = playerColor === 'w' ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
+  const ranks = orientation === 'white' ? ['8', '7', '6', '5', '4', '3', '2', '1'] : ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const files = orientation === 'white' ? ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] : ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'];
 
   const squares = [];
   for (let i = 0; i < 8; i++) {
@@ -57,3 +57,5 @@ export function Chessboard({
     </div>
   );
 }
+
+    
