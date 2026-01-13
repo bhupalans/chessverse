@@ -110,7 +110,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             const elapsed = (now - lastTick) / 1000; // in seconds
             
             const playerWhoMoved = game.turn() === 'b' ? 'white' : 'black'; // The player who just moved
-            const playerToUpdate = game.turn() === 'b' ? 'white' : 'black';
+            //const playerToUpdate = game.turn() === 'b' ? 'white' : 'black';
             const increment = gameData.clocks.increment || 0;
             
             let newTime = gameData.clocks[playerWhoMoved] - elapsed + increment;

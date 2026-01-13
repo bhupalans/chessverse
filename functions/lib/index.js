@@ -66,6 +66,22 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         if (game.turn() !== playerColor) {
             throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
         }
+        // --- Timeout Check ---
+        if (gameData.clocks && firestoreGameData.timeControl) {
+            const now = Date.now();
+            const lastTick = gameData.clocks.lastTick;
+            const elapsed = (now - lastTick) / 1000;
+            const playerTime = playerColor === 'w' ? gameData.clocks.white : gameData.clocks.black;
+            if (playerTime - elapsed <= 0) {
+                await firestoreGameRef.update({
+                    status: 'completed',
+                    winnerId: playerColor === 'w' ? 'b' : 'w', // Opponent wins
+                    reason: 'timeout',
+                });
+                // No need to update RTDB as game is over
+                return { status: 'timeout' };
+            }
+        }
         const move = game.move({ from, to, promotion });
         if (move === null) {
             throw new functions.https.HttpsError('invalid-argument', 'Illegal move.');
@@ -103,13 +119,15 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             const now = Date.now();
             const lastTick = gameData.clocks.lastTick;
             const elapsed = (now - lastTick) / 1000; // in seconds
-            const playerToUpdate = game.turn() === 'w' ? 'black' : 'white';
-            const increment = Math.floor((firestoreGameData.timeControl.increment || 0) / 1000);
-            let newTime = gameData.clocks[playerToUpdate] - elapsed + increment;
+            const playerWhoMoved = game.turn() === 'b' ? 'white' : 'black'; // The player who just moved
+            //const playerToUpdate = game.turn() === 'b' ? 'white' : 'black';
+            const increment = gameData.clocks.increment || 0;
+            let newTime = gameData.clocks[playerWhoMoved] - elapsed + increment;
             if (newTime < 0)
                 newTime = 0;
             updates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
-            updates[`clocks/${playerToUpdate}`] = newTime;
+            updates[`clocks/${playerWhoMoved}`] = newTime;
+            updates['clocks/running'] = newTurn; // The next player's clock is now running
         }
         await gameRef.update(updates);
         if (game.isGameOver()) {
