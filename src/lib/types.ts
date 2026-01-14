@@ -13,7 +13,10 @@ export type User = {
   avatarUrl?: string;
   eloRating: number;
   onlineStatus: 'online' | 'offline';
-  completedGames: number;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
 };
 
 export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';
@@ -61,6 +64,10 @@ export type Game = {
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate' | 'timeout' | 'abort';
   timeControl: TimeControl;
   createdAt?: any;
+  whiteEloBefore?: number;
+  blackEloBefore?: number;
+  whiteEloAfter?: number;
+  blackEloAfter?: number;
 };
 
 export type HistoryGame = {

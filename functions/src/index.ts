@@ -434,3 +434,102 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
+
+
+export const updateEloOnGameComplete = functions.firestore
+    .document('/games/{gameId}')
+    .onUpdate(async (change, context) => {
+        const beforeData = change.before.data();
+        const afterData = change.after.data();
+
+        // Check if game status just became 'completed'
+        if (beforeData.status !== 'completed' && afterData.status === 'completed') {
+            const { player1Id, player2Id, winnerId, player1Color, isBotGame, reason } = afterData;
+
+            // Do not calculate ELO for bot games or aborted games
+            if (isBotGame || reason === 'abort') {
+                return null;
+            }
+
+            const kFactor = 32;
+
+            const player1Ref = firestore.collection('users').doc(player1Id);
+            const player2Ref = firestore.collection('users').doc(player2Id);
+
+            try {
+                const [player1Doc, player2Doc] = await Promise.all([player1Ref.get(), player2Ref.get()]);
+
+                if (!player1Doc.exists || !player2Doc.exists) {
+                    console.error("One or both players not found for ELO update.");
+                    return null;
+                }
+
+                const player1 = player1Doc.data()!;
+                const player2 = player2Doc.data()!;
+
+                const elo1 = player1.eloRating || 1200;
+                const elo2 = player2.eloRating || 1200;
+
+                const expectedScore1 = 1 / (1 + Math.pow(10, (elo2 - elo1) / 400));
+                const expectedScore2 = 1 / (1 + Math.pow(10, (elo1 - elo2) / 400));
+                
+                let score1, score2;
+                
+                const player1IsWhite = player1Color === 'w';
+
+                if (winnerId === 'd') { // Draw
+                    score1 = 0.5;
+                    score2 = 0.5;
+                } else if ((player1IsWhite && winnerId === 'w') || (!player1IsWhite && winnerId === 'b')) { // Player 1 won
+                    score1 = 1;
+                    score2 = 0;
+                } else { // Player 2 won
+                    score1 = 0;
+                    score2 = 1;
+                }
+                
+                const newElo1 = Math.round(elo1 + kFactor * (score1 - expectedScore1));
+                const newElo2 = Math.round(elo2 + kFactor * (score2 - expectedScore2));
+
+                const transaction = firestore.batch();
+
+                // Update player 1 stats
+                transaction.update(player1Ref, {
+                    eloRating: newElo1,
+                    gamesPlayed: admin.firestore.FieldValue.increment(1),
+                    wins: score1 === 1 ? admin.firestore.FieldValue.increment(1) : player1.wins,
+                    losses: score1 === 0 ? admin.firestore.FieldValue.increment(1) : player1.losses,
+                    draws: score1 === 0.5 ? admin.firestore.FieldValue.increment(1) : player1.draws,
+                });
+
+                // Update player 2 stats
+                transaction.update(player2Ref, {
+                    eloRating: newElo2,
+                    gamesPlayed: admin.firestore.FieldValue.increment(1),
+                    wins: score2 === 1 ? admin.firestore.FieldValue.increment(1) : player2.wins,
+                    losses: score2 === 0 ? admin.firestore.FieldValue.increment(1) : player2.losses,
+                    draws: score2 === 0.5 ? admin.firestore.FieldValue.increment(1) : player2.draws,
+                });
+
+                // Save ELO snapshot to game document
+                const whitePlayerEloBefore = player1IsWhite ? elo1 : elo2;
+                const blackPlayerEloBefore = player1IsWhite ? elo2 : elo1;
+                const whitePlayerEloAfter = player1IsWhite ? newElo1 : newElo2;
+                const blackPlayerEloAfter = player1IsWhite ? newElo2 : newElo1;
+                
+                transaction.update(change.after.ref, {
+                    whiteEloBefore: whitePlayerEloBefore,
+                    blackEloBefore: blackPlayerEloBefore,
+                    whiteEloAfter: whitePlayerEloAfter,
+                    blackEloAfter: blackPlayerEloAfter,
+                });
+
+                await transaction.commit();
+                console.log(`ELO updated for game ${context.params.gameId}. P1: ${elo1} -> ${newElo1}, P2: ${elo2} -> ${newElo2}`);
+
+            } catch (error) {
+                console.error(`Failed to update ELO for game ${context.params.gameId}:`, error);
+            }
+        }
+        return null;
+    });

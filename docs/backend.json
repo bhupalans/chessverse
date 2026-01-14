@@ -21,11 +21,23 @@
         },
         "eloRating": {
           "type": "number",
-          "description": "The user's ELO rating."
+          "description": "The user's ELO rating. Defaults to 1200."
         },
-        "completedGames": {
+        "gamesPlayed": {
           "type": "number",
           "description": "Number of games completed by the user."
+        },
+        "wins": {
+          "type": "number",
+          "description": "Number of games won by the user."
+        },
+        "losses": {
+          "type": "number",
+          "description": "Number of games lost by the user."
+        },
+        "draws": {
+          "type": "number",
+          "description": "Number of games drawn by the user."
         },
         "onlineStatus": {
           "type": "string",

@@ -97,13 +97,13 @@ async function handleBotMove(gameId, firestoreGameRef, firestoreGameData) {
         const now = Date.now();
         const lastTick = gameData.clocks.lastTick;
         const elapsed = (now - lastTick) / 1000;
-        const botColorName = firestoreGameData.player1Color === 'w' ? 'black' : 'white';
+        const botColorName = firestoreGameData.player2Color === 'w' ? 'white' : 'black';
         const increment = firestoreGameData.timeControl.increment / 1000 || 0;
         const botTimeRemaining = gameData.clocks[botColorName] - elapsed;
         if (botTimeRemaining <= 0) {
             await firestoreGameRef.update({
                 status: 'completed',
-                winnerId: game.turn(), // Human wins
+                winnerId: firestoreGameData.player1Color,
                 reason: 'timeout',
             });
             return;
@@ -112,6 +112,7 @@ async function handleBotMove(gameId, firestoreGameRef, firestoreGameData) {
         updates[`clocks/${botColorName}`] = botTimeRemaining + increment;
         updates['clocks/running'] = newTurn;
     }
+    await firestoreGameRef.update({ turn: newTurn });
     await gameRef.update(updates);
     if (game.isGameOver()) {
         let reason = 'Game Over';
@@ -136,7 +137,6 @@ async function handleBotMove(gameId, firestoreGameRef, firestoreGameData) {
     }
 }
 exports.submitMove = functions.https.onCall(async (data, context) => {
-    // Ensure the user is authenticated for non-bot games
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
     }
@@ -157,11 +157,9 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             throw new functions.https.HttpsError('not-found', 'Game not found.');
         }
         const isBotGame = firestoreGameData.isBotGame === true;
-        const playerColor = isBotGame
-            ? firestoreGameData.player1Color
-            : (context.auth.uid === firestoreGameData.player1Id ? firestoreGameData.player1Color || 'w' : (firestoreGameData.player1Color === 'w' ? 'b' : 'w'));
+        const playerColor = context.auth.uid === firestoreGameData.player1Id ? firestoreGameData.player1Color : firestoreGameData.player2Color;
         const game = new chess_js_1.Chess(gameData.fen);
-        if (game.turn() !== playerColor) {
+        if (game.turn() !== playerColor || firestoreGameData.turn !== playerColor) {
             throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
         }
         if (gameData.clocks && firestoreGameData.timeControl) {
@@ -214,7 +212,7 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             const now = Date.now();
             const lastTick = gameData.clocks.lastTick;
             const elapsed = (now - lastTick) / 1000;
-            const playerWhoMoved = game.turn() === 'b' ? 'white' : 'black';
+            const playerWhoMoved = playerColor === 'w' ? 'white' : 'black';
             const increment = firestoreGameData.timeControl.increment / 1000 || 0;
             let newTime = gameData.clocks[playerWhoMoved] - elapsed + increment;
             if (newTime < 0)
@@ -223,6 +221,7 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             updates[`clocks/${playerWhoMoved}`] = newTime;
             updates['clocks/running'] = newTurn;
         }
+        await firestoreGameRef.update({ turn: newTurn });
         await gameRef.update(updates);
         if (game.isGameOver()) {
             let reason = 'Game Over';
@@ -332,10 +331,7 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
         if (gameData.isBotGame) {
             throw new functions.https.HttpsError('failed-precondition', 'Game actions are not allowed in bot games.');
         }
-        //const playerColor = uid === gameData.player1Id ? firestoreGameData.player1Color || 'w' : (firestoreGameData.player1Color === 'w' ? 'b' : 'w');
-        const playerColor = uid === gameData.player1Id
-            ? gameData.player1Color || 'w'
-            : (gameData.player1Color === 'w' ? 'b' : 'w');
+        const playerColor = uid === gameData.player1Id ? gameData.player1Color : gameData.player2Color;
         const opponentId = uid === gameData.player1Id ? gameData.player2Id : gameData.player1Id;
         const opponentColor = playerColor === 'w' ? 'b' : 'w';
         switch (action) {

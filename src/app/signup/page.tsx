@@ -59,7 +59,10 @@ export default function SignupPage() {
       email: user.email,
       username: user.displayName || 'Anonymous',
       eloRating: 1200,
-      completedGames: 0,
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
       onlineStatus: 'online',
     }, { merge: true });
   };
