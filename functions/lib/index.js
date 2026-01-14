@@ -166,7 +166,8 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
             const now = Date.now();
             const lastTick = gameData.clocks.lastTick;
             const elapsed = (now - lastTick) / 1000;
-            const playerTime = playerColor === 'w' ? gameData.clocks.white : gameData.clocks.black;
+            const playerColorName = playerColor === 'w' ? 'white' : 'black';
+            const playerTime = gameData.clocks[playerColorName];
             if (playerTime - elapsed <= 0) {
                 await firestoreGameRef.update({
                     status: 'completed',
@@ -406,11 +407,16 @@ exports.updateEloOnGameComplete = functions.firestore
     .onUpdate(async (change, context) => {
     const beforeData = change.before.data();
     const afterData = change.after.data();
-    // Check if game status just became 'completed'
-    if (beforeData.status !== 'completed' && afterData.status === 'completed') {
+    // Check if game status just became 'completed' and ELO has not been processed
+    if (beforeData.status !== 'completed' && afterData.status === 'completed' && !afterData.eloProcessed) {
         const { player1Id, player2Id, winnerId, player1Color, isBotGame, reason } = afterData;
         // Do not calculate ELO for bot games or aborted games
         if (isBotGame || reason === 'abort') {
+            return null;
+        }
+        // Ensure both player IDs exist
+        if (!player1Id || !player2Id) {
+            console.log("Missing player IDs, skipping ELO calculation.");
             return null;
         }
         const kFactor = 32;
@@ -467,6 +473,7 @@ exports.updateEloOnGameComplete = functions.firestore
             const whitePlayerEloAfter = player1IsWhite ? newElo1 : newElo2;
             const blackPlayerEloAfter = player1IsWhite ? newElo2 : newElo1;
             transaction.update(change.after.ref, {
+                eloProcessed: true,
                 whiteEloBefore: whitePlayerEloBefore,
                 blackEloBefore: blackPlayerEloBefore,
                 whiteEloAfter: whitePlayerEloAfter,
