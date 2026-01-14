@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Crown, History, LogIn, LogOut, User } from 'lucide-react';
+import { Crown, History, LogIn, LogOut, User, Trophy } from 'lucide-react';
 import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -54,6 +54,13 @@ export function Header() {
           </Link>
           {user && (
             <nav className="flex items-center space-x-6 text-sm font-medium">
+               <Link
+                href="/leaderboard"
+                className="transition-colors hover:text-foreground/80 text-foreground/60"
+              >
+                <Trophy className="mr-2 inline-block h-4 w-4" />
+                Leaderboard
+              </Link>
               <Link
                 href="/history"
                 className="transition-colors hover:text-foreground/80 text-foreground/60"
