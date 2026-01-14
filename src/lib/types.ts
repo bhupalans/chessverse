@@ -53,6 +53,7 @@ export type Game = {
   isBotGame?: boolean;
   botDifficulty?: 'easy' | 'medium' | 'hard';
   status: GameStatus;
+  eloProcessed?: boolean;
   eloGain?: number;
   fen?: string;
   turn: 'w' | 'b';
