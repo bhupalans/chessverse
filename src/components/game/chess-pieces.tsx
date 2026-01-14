@@ -21,7 +21,6 @@ export function ChessPieces({
   playerColor,
   isGameOver,
   turn,
-  gameStarted,
   isEngineLoading,
   lastMove,
   orientation,
@@ -31,7 +30,6 @@ export function ChessPieces({
   playerColor: Color | null;
   isGameOver: boolean;
   turn: Color;
-  gameStarted: boolean;
   isEngineLoading: boolean;
   lastMove: LastMoveInfo | null;
   orientation: 'white' | 'black';
@@ -77,13 +75,6 @@ export function ChessPieces({
       return;
     }
 
-    if (!gameStarted) {
-      toast({
-        title: 'Game Not Started',
-        description: 'The game has not started yet.',
-      });
-      return;
-    }
     if (isGameOver) {
       toast({ title: 'Game Over' });
       return;
@@ -141,13 +132,12 @@ export function ChessPieces({
     }
   };
   
-  const canMove = playerColor && playerColor === turn && gameStarted && !isGameOver;
+  const canMove = playerColor && playerColor === turn && !isGameOver;
 
   return (
     <div 
       className={cn(
         "absolute inset-0", 
-        !gameStarted && "opacity-70",
         canMove && 'cursor-pointer'
       )}
       onClick={canMove ? handleBoardClick : undefined}

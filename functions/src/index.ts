@@ -90,18 +90,20 @@ async function calculateAndApplyElo(
         });
         
         // 6. Write ELO snapshot to game
-        const whitePlayerEloBefore = player1Color === 'w' ? elo1 : elo2;
-        const blackPlayerEloBefore = player1Color === 'b' ? elo1 : elo2;
-        const whitePlayerEloAfter = player1Color === 'w' ? newElo1 : newElo2;
-        const blackPlayerEloAfter = player1Color === 'b' ? newElo1 : newElo2;
-
+        const whiteEloBefore = player1Color === 'w' ? elo1 : elo2;
+        const blackEloBefore = player1Color === 'w' ? elo2 : elo1;
+        const whiteEloAfter  = player1Color === 'w' ? newElo1 : newElo2;
+        const blackEloAfter  = player1Color === 'w' ? newElo2 : newElo1;
+        
+        // This update is now part of the transaction, so we pass the transaction object to `update`.
         transaction.update(gameRef, {
-            eloProcessed: true,
-            whiteEloBefore,
-            blackEloBefore,
-            whiteEloAfter,
-            blackEloAfter,
+          whiteEloBefore,
+          blackEloBefore,
+          whiteEloAfter,
+          blackEloAfter,
+          eloProcessed: true,
         });
+        
         
         console.log(`ELO updated for game ${gameRef.id}. P1: ${elo1} -> ${newElo1}, P2: ${elo2} -> ${newElo2}`);
 
@@ -154,8 +156,6 @@ async function handleBotMove(gameId: string, firestoreGameRef: admin.firestore.D
         turn: newTurn,
         lastMove: lastMove
     };
-    
-    const isBotTurn = newTurn !== firestoreGameData.player1Color;
 
     if (gameData.clocks && firestoreGameData.timeControl) {
         const now = Date.now();
@@ -170,11 +170,11 @@ async function handleBotMove(gameId: string, firestoreGameRef: admin.firestore.D
         if (botTimeRemaining <= 0) {
             const winnerId = firestoreGameData.player1Color;
             await firestore.runTransaction(async (transaction) => {
-                await calculateAndApplyElo(transaction, firestoreGameRef, firestoreGameData, winnerId);
                 transaction.update(firestoreGameRef, {
                     status: 'completed',
                     winnerId: winnerId,
                     reason: 'timeout',
+                    completedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             });
             return;
@@ -204,11 +204,9 @@ async function handleBotMove(gameId: string, firestoreGameRef: admin.firestore.D
         firestoreUpdates.winnerId = winnerId;
         firestoreUpdates.reason = reason;
         firestoreUpdates.fen = newFen;
+        firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
 
-        await firestore.runTransaction(async (transaction) => {
-            await calculateAndApplyElo(transaction, firestoreGameRef, firestoreGameData, winnerId);
-            transaction.update(firestoreGameRef, firestoreUpdates);
-        });
+        await firestoreGameRef.update(firestoreUpdates);
 
     } else {
          await firestoreGameRef.update(firestoreUpdates);
@@ -272,7 +270,10 @@ export const submitMove = functions.https.onCall(async (data, context) => {
 
             const isBotGame = firestoreGameData.isBotGame === true;
             
-            const myColor = context.auth.uid === firestoreGameData.player1Id 
+            const uid = context.auth?.uid;
+            if (!uid) throw new functions.https.HttpsError("unauthenticated", "Not logged in");
+
+            const myColor = uid === firestoreGameData.player1Id
                 ? firestoreGameData.player1Color 
                 : firestoreGameData.player2Color;
             
@@ -295,12 +296,12 @@ export const submitMove = functions.https.onCall(async (data, context) => {
                 
                 if (newTime <= 0) {
                     const winnerId = myColor === 'w' ? 'b' : 'w';
+                    firestoreUpdates.status = 'completed';
+                    firestoreUpdates.winnerId = winnerId;
+                    firestoreUpdates.reason = 'timeout';
+                    firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
                     await calculateAndApplyElo(transaction, firestoreGameRef, firestoreGameData, winnerId);
-                    transaction.update(firestoreGameRef, {
-                        status: 'completed',
-                        winnerId: winnerId, 
-                        reason: 'timeout',
-                    });
+                    transaction.update(firestoreGameRef, firestoreUpdates);
                     return { status: 'timeout' };
                 }
                  const increment = firestoreGameData.timeControl.increment / 1000 || 0;
@@ -362,6 +363,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
                 firestoreUpdates.winnerId = winnerId;
                 firestoreUpdates.reason = reason;
                 firestoreUpdates.fen = newFen;
+                firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
                 
                 await calculateAndApplyElo(transaction, firestoreGameRef, firestoreGameData, winnerId);
             }
@@ -493,9 +495,16 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
             if (gameData.isBotGame && ['draw', 'decline-draw', 'abort'].includes(action)) {
                  throw new functions.https.HttpsError('failed-precondition', 'This action is not allowed in bot games.');
             }
+            
+            const isPlayer1 = uid === gameData.player1Id;
+            const isPlayer2 = uid === gameData.player2Id;
+            
+            if(!isPlayer1 && !isPlayer2) {
+                 throw new functions.https.HttpsError('permission-denied', 'You are not a player in this game.');
+            }
 
-            const myColor = uid === gameData.player1Id ? gameData.player1Color : gameData.player2Color;
-            const opponentId = uid === gameData.player1Id ? gameData.player2Id : gameData.player1Id;
+            const opponentId = isPlayer1 ? gameData.player2Id : gameData.player1Id;
+            const myColor = isPlayer1 ? gameData.player1Color : gameData.player2Color;
             const opponentColor = myColor === 'w' ? 'b' : 'w';
             
             const firestoreUpdates: any = {};
@@ -505,6 +514,7 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                     firestoreUpdates.status = 'completed';
                     firestoreUpdates.winnerId = opponentColor;
                     firestoreUpdates.reason = 'resign';
+                    firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
                     await calculateAndApplyElo(transaction, gameRef, gameData, opponentColor);
                     transaction.update(gameRef, firestoreUpdates);
                     return { status: 'success' };
@@ -516,6 +526,7 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                          firestoreUpdates.winnerId = 'd';
                          firestoreUpdates.reason = 'draw';
                          firestoreUpdates.drawOffer = null;
+                         firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
                          firestoreUpdates.lastDrawAction = {
                             type: 'accepted',
                             by: uid,
@@ -548,18 +559,17 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                     }
 
                 case 'abort':
-                    // This logic is tricky with RTDB, let's simplify: only allow if game hasn't really started.
-                    if (gameData.status !== 'inprogress') {
-                         firestoreUpdates.status = 'completed';
-                         firestoreUpdates.winnerId = 'd';
-                         firestoreUpdates.reason = 'abort';
-                         await calculateAndApplyElo(transaction, gameRef, gameData, 'd');
-                         transaction.update(gameRef, firestoreUpdates);
-                         return { status: 'success' };
+                    // Can only abort if game has not started
+                    if (gameData.status === 'inprogress') {
+                         throw new functions.https.HttpsError('failed-precondition', 'Cannot abort a game that is in progress.');
                     }
-                    // Aborting a game in progress requires checking move history, which is complex here.
-                    // For now, we prevent aborting in-progress games.
-                    throw new functions.https.HttpsError('failed-precondition', 'Cannot abort a game that is in progress.');
+                    firestoreUpdates.status = 'completed';
+                    firestoreUpdates.winnerId = 'd'; // No winner
+                    firestoreUpdates.reason = 'abort';
+                    firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
+                    // Do not apply ELO for aborted games
+                    transaction.update(gameRef, firestoreUpdates);
+                    return { status: 'success' };
 
 
                 default:
@@ -574,5 +584,3 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
-
-    

@@ -50,7 +50,6 @@ function GamePageContent() {
     }
   }, [gameFen]);
 
-  const [gameStarted, setGameStarted] = useState(false);
   const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
   
@@ -111,7 +110,10 @@ function GamePageContent() {
 
   useEffect(() => {
     if (finalGameOver || !liveGameState?.clocks || !firestoreGame) {
-        if (liveGameState?.clocks) {
+        if(firestoreGame?.timeControl && !liveGameState?.clocks) {
+            setDisplayClocks({ white: firestoreGame.timeControl.initial / 1000, black: firestoreGame.timeControl.initial / 1000 });
+        }
+        else if (liveGameState?.clocks) {
             setDisplayClocks({ white: liveGameState.clocks.white, black: liveGameState.clocks.black });
         }
         return;
@@ -125,16 +127,12 @@ function GamePageContent() {
         let newWhite = clocks.white;
         let newBlack = clocks.black;
 
-        if (firestoreGame.turn === 'w') {
+        if (clocks.running === 'w') {
             newWhite = Math.max(0, clocks.white - elapsed);
-        } else {
-             newWhite = clocks.white
         }
         
-        if (firestoreGame.turn === 'b') {
+        if (clocks.running === 'b') {
             newBlack = Math.max(0, clocks.black - elapsed);
-        } else {
-            newBlack = clocks.black
         }
         
         setDisplayClocks({ white: newWhite, black: newBlack });
@@ -191,12 +189,6 @@ function GamePageContent() {
       handleGameOver(firestoreGame.reason || 'Game Over', firestoreGame.winnerId);
     }
   }, [firestoreGame, gameOverState, handleGameOver]);
-
-  useEffect(() => {
-    if (!gameStarted && firestoreGame?.status === 'inprogress') {
-      setGameStarted(true);
-    }
-  }, [firestoreGame, gameStarted]);
 
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
       if (!myTurn) {
@@ -287,12 +279,12 @@ function GamePageContent() {
   const topPlayerTime = displayClocks ? (topPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
   const bottomPlayerTime = displayClocks ? (bottomPlayer === whitePlayer ? displayClocks.white : displayClocks.black) : null;
   
-  const topPlayerIsTurn = gameStarted && !finalGameOver && (
+  const topPlayerIsTurn = !finalGameOver && (
     (topPlayer === whitePlayer && currentTurn === 'w') || 
     (topPlayer === blackPlayer && currentTurn === 'b')
   );
   
-  const bottomPlayerIsTurn = gameStarted && !finalGameOver && myTurn;
+  const bottomPlayerIsTurn = !finalGameOver && myTurn;
 
 
   if (isFirestoreGameLoading || arePlayersLoading || !gameFen) {
@@ -327,7 +319,6 @@ function GamePageContent() {
                     playerColor={myColor}
                     isGameOver={finalGameOver}
                     turn={firestoreGame.turn}
-                    gameStarted={gameStarted}
                     isEngineLoading={false}
                     lastMove={lastMove}
                     orientation={boardOrientation}
@@ -354,7 +345,7 @@ function GamePageContent() {
                 </div>
               </div>
             )}
-             {!gameStarted && firestoreGame?.status === 'waiting' && (
+             {!finalGameOver && firestoreGame?.status === 'waiting' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
                     <div className="text-white text-lg text-center p-4">
                         <p>Waiting for an opponent...</p>
@@ -379,7 +370,7 @@ function GamePageContent() {
           )}
           <div className="p-4 flex items-center justify-between bg-card rounded-lg">
             <div className="grid grid-cols-2 gap-2 flex-1">
-              {gameStarted && myColor ? (
+              {myColor ? (
                 <>
                   <Button variant="outline" onClick={handleResign} disabled={finalGameOver}>
                     <Flag className="mr-2 h-4 w-4" /> Resign
@@ -389,10 +380,8 @@ function GamePageContent() {
                     Offer Draw
                   </Button>
                 </>
-              ) : gameStarted && !myColor ? (
-                <div className="col-span-2 text-center text-muted-foreground">Spectator Mode</div>
               ) : (
-                 <div className="col-span-2 text-center text-muted-foreground">Waiting for opponent...</div>
+                <div className="col-span-2 text-center text-muted-foreground">Spectator Mode</div>
               )}
             </div>
              <div className="ml-2">

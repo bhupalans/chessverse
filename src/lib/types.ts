@@ -28,7 +28,6 @@ export type LastMove = {
   color: 'w' | 'b';
   captured: boolean;
   sound?: 'move' | 'capture' | 'check' | 'castle' | 'promotion';
-  at?: any; // Firestore Timestamp
 };
 
 export type LastDrawAction = {
@@ -44,18 +43,16 @@ export type TimeControl = {
 
 export type Game = {
   id:string;
-  player1Id?: string;
-  player2Id?: string;
-  player1?: Player;
-  player2?: Player;
+  player1Id: string;
+  player2Id: string;
+  player1: Player;
+  player2: Player;
   player1Color: 'w' | 'b';
   player2Color: 'w' | 'b';
   isBotGame?: boolean;
   botDifficulty?: 'easy' | 'medium' | 'hard';
   status: GameStatus;
   eloProcessed?: boolean;
-  eloGain?: number;
-  fen?: string;
   turn: 'w' | 'b';
   moves?: string[];
   lastMove?: LastMove;
@@ -64,7 +61,8 @@ export type Game = {
   lastDrawAction?: LastDrawAction;
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate' | 'timeout' | 'abort';
   timeControl: TimeControl;
-  createdAt?: any;
+  createdAt: any; // Firestore Timestamp
+  completedAt?: any; // Firestore Timestamp
   whiteEloBefore?: number;
   blackEloBefore?: number;
   whiteEloAfter?: number;
