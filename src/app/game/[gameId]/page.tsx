@@ -38,15 +38,17 @@ function GamePageContent() {
 
   const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
   
+  const isBotGame = useMemo(() => firestoreGame?.isBotGame || firestoreGame?.player2Id === 'BOT', [firestoreGame]);
+
   const player1DocRef = useMemoFirebase(() => {
     if (!firestore || !firestoreGame?.player1Id) return null;
     return doc(firestore, 'users', firestoreGame.player1Id);
   }, [firestore, firestoreGame?.player1Id]);
   
   const player2DocRef = useMemoFirebase(() => {
-    if (!firestore || !firestoreGame?.player2Id) return null;
+    if (!firestore || !firestoreGame?.player2Id || isBotGame) return null;
     return doc(firestore, 'users', firestoreGame.player2Id);
-  }, [firestore, firestoreGame?.player2Id]);
+  }, [firestore, firestoreGame?.player2Id, isBotGame]);
 
   const { data: player1Profile, isLoading: isP1Loading } = useDoc<UserType>(player1DocRef);
   const { data: player2Profile, isLoading: isP2Loading } = useDoc<UserType>(player2DocRef);
@@ -172,9 +174,23 @@ function GamePageContent() {
   }, [myColor, firestoreGame]);
   
   const { whitePlayer, blackPlayer, arePlayersLoading } = useMemo(() => {
-    if (isFirestoreGameLoading || !firestoreGame || isP1Loading || isP2Loading) {
-        return { whitePlayer: null, blackPlayer: null, arePlayersLoading: true };
+    if (isFirestoreGameLoading || !firestoreGame || isP1Loading) {
+      return { whitePlayer: null, blackPlayer: null, arePlayersLoading: true };
     }
+    
+    // Handle bot game logic
+    if (isBotGame) {
+      if (firestoreGame.player1Color === 'b') {
+        return { whitePlayer: firestoreGame.player2 as UserType, blackPlayer: player1Profile, arePlayersLoading: !player1Profile };
+      }
+      return { whitePlayer: player1Profile, blackPlayer: firestoreGame.player2 as UserType, arePlayersLoading: !player1Profile };
+    }
+    
+    // Standard 2-player game logic
+    if (isP2Loading) {
+      return { whitePlayer: null, blackPlayer: null, arePlayersLoading: true };
+    }
+
     const p1 = player1Profile;
     const p2 = player2Profile;
 
@@ -183,10 +199,10 @@ function GamePageContent() {
     }
 
     if (firestoreGame.player1Color === 'b') {
-        return { whitePlayer: p2, blackPlayer: p1, arePlayersLoading: false };
+      return { whitePlayer: p2, blackPlayer: p1, arePlayersLoading: false };
     }
     return { whitePlayer: p1, blackPlayer: p2, arePlayersLoading: false };
-  }, [firestoreGame, isFirestoreGameLoading, player1Profile, player2Profile, isP1Loading, isP2Loading]);
+  }, [firestoreGame, isFirestoreGameLoading, player1Profile, player2Profile, isP1Loading, isP2Loading, isBotGame]);
 
   const handleGameOver = useCallback((reason: string, winnerId?: 'w' | 'b' | 'd') => {
       playSound('game-end');
