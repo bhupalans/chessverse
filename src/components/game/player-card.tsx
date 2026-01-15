@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Bot, Timer, Handshake } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMemo } from 'react';
-import type { Game } from '@/lib/types';
+import type { Game, User } from '@/lib/types';
 
 const formatTime = (timeInSeconds: number | null | undefined): string => {
   if (timeInSeconds === null || typeof timeInSeconds === 'undefined' || timeInSeconds < 0) {
@@ -19,22 +19,16 @@ const formatTime = (timeInSeconds: number | null | undefined): string => {
 
 
 export const PlayerCard = ({
-  name,
-  elo,
-  avatar,
+  player,
   isTurn,
-  isBot = false,
   color,
   time,
   drawOffered,
   onDrawResponse,
   firestoreGame,
 }: {
-  name: string;
-  elo: number;
-  avatar?: string;
+  player: User;
   isTurn?: boolean;
-  isBot?: boolean;
   color?: 'White' | 'Black';
   time?: number | null;
   drawOffered?: boolean;
@@ -42,22 +36,22 @@ export const PlayerCard = ({
   firestoreGame: Game | null;
 }) => {
   const formattedTime = useMemo(() => formatTime(time), [time]);
-  
+  const isBot = player.id === 'BOT';
 
   return (
     <div className={cn("flex items-center justify-between p-3 rounded-lg bg-card text-card-foreground", isTurn && "bg-primary/10")}>
       <div className="flex items-center gap-3">
         <Avatar>
-          <AvatarImage src={avatar} />
-          <AvatarFallback>{name ? name.charAt(0) : '?'}</AvatarFallback>
+          <AvatarImage src={player.avatarUrl} />
+          <AvatarFallback>{player.username ? player.username.charAt(0) : '?'}</AvatarFallback>
         </Avatar>
         <div>
           <div className="flex items-center gap-2">
-            <p className="font-semibold">{name}</p>
+            <p className="font-semibold">{player.username}</p>
             {color && <span className="text-xs font-medium text-muted-foreground">({color})</span>}
             {isBot && <Bot className="h-4 w-4 text-muted-foreground" />}
           </div>
-          <p className="text-sm text-muted-foreground">ELO: {elo}</p>
+          <p className="text-sm text-muted-foreground">ELO: {player.eloRating ?? '...'}</p>
         </div>
       </div>
 

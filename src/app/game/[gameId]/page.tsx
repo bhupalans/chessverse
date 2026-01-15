@@ -38,6 +38,19 @@ function GamePageContent() {
 
   const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
   
+  const player1DocRef = useMemoFirebase(() => {
+    if (!firestore || !firestoreGame?.player1Id) return null;
+    return doc(firestore, 'users', firestoreGame.player1Id);
+  }, [firestore, firestoreGame?.player1Id]);
+  
+  const player2DocRef = useMemoFirebase(() => {
+    if (!firestore || !firestoreGame?.player2Id) return null;
+    return doc(firestore, 'users', firestoreGame.player2Id);
+  }, [firestore, firestoreGame?.player2Id]);
+
+  const { data: player1Profile, isLoading: isP1Loading } = useDoc<UserType>(player1DocRef);
+  const { data: player2Profile, isLoading: isP2Loading } = useDoc<UserType>(player2DocRef);
+
   const gameFen = liveGameState?.fen;
   
   const game = useMemo(() => {
@@ -158,18 +171,22 @@ function GamePageContent() {
     return firestoreGame.turn === myColor;
   }, [myColor, firestoreGame]);
   
-  const { whitePlayer, blackPlayer, isLoading: arePlayersLoading } = useMemo(() => {
-    if (isFirestoreGameLoading || !firestoreGame) {
-      return { whitePlayer: null, blackPlayer: null, isLoading: true };
+  const { whitePlayer, blackPlayer, arePlayersLoading } = useMemo(() => {
+    if (isFirestoreGameLoading || !firestoreGame || isP1Loading || isP2Loading) {
+        return { whitePlayer: null, blackPlayer: null, arePlayersLoading: true };
     }
-    const p1 = firestoreGame.player1;
-    const p2 = firestoreGame.player2;
+    const p1 = player1Profile;
+    const p2 = player2Profile;
+
+    if (!p1 || !p2) {
+      return { whitePlayer: null, blackPlayer: null, arePlayersLoading: true };
+    }
 
     if (firestoreGame.player1Color === 'b') {
-        return { whitePlayer: p2, blackPlayer: p1, isLoading: false };
+        return { whitePlayer: p2, blackPlayer: p1, arePlayersLoading: false };
     }
-    return { whitePlayer: p1, blackPlayer: p2, isLoading: false };
-  }, [firestoreGame, isFirestoreGameLoading]);
+    return { whitePlayer: p1, blackPlayer: p2, arePlayersLoading: false };
+  }, [firestoreGame, isFirestoreGameLoading, player1Profile, player2Profile, isP1Loading, isP2Loading]);
 
   const handleGameOver = useCallback((reason: string, winnerId?: 'w' | 'b' | 'd') => {
       playSound('game-end');
@@ -301,10 +318,7 @@ function GamePageContent() {
         <div className="w-full max-w-lg space-y-4">
            {topPlayer && (
             <PlayerCard 
-              name={topPlayer.username} 
-              elo={topPlayer.eloRating} 
-              avatar={topPlayer.avatarUrl}
-              isBot={topPlayer.id === 'BOT'}
+              player={topPlayer}
               isTurn={topPlayerIsTurn} 
               color={topPlayer === whitePlayer ? 'White' : 'Black'}
               time={topPlayerTime}
@@ -356,10 +370,7 @@ function GamePageContent() {
           </div>
           {bottomPlayer && (
              <PlayerCard 
-                name={bottomPlayer.username} 
-                elo={bottomPlayer.eloRating} 
-                avatar={bottomPlayer.avatarUrl}
-                isBot={bottomPlayer.id === 'BOT'}
+                player={bottomPlayer}
                 isTurn={bottomPlayerIsTurn} 
                 color={bottomPlayer === whitePlayer ? 'White' : 'Black'}
                 drawOffered={drawOfferedToMe}
