@@ -8,7 +8,7 @@ import { Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
 import { Button } from '@/components/ui/button';
-import { Flag, Swords, Crown, Handshake } from 'lucide-react';
+import { Flag, Swords, Crown, Handshake, WifiOff } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import type { User as UserType, Game as GameType, LastMove, LiveGame } from '@/lib/types';
@@ -39,6 +39,12 @@ function GamePageContent() {
   const { data: firestoreGame, isLoading: isFirestoreGameLoading } = useDoc<GameType>(gameDocRef);
   
   const isBotGame = useMemo(() => firestoreGame?.isBotGame || firestoreGame?.player2Id === 'BOT', [firestoreGame]);
+  
+  const opponentId = useMemo(() => {
+    if (!user || !firestoreGame) return null;
+    if (isBotGame) return null;
+    return firestoreGame.player1Id === user.uid ? firestoreGame.player2Id : firestoreGame.player1Id;
+  }, [user, firestoreGame, isBotGame]);
 
   const player1DocRef = useMemoFirebase(() => {
     if (!firestore || !firestoreGame?.player1Id) return null;
@@ -56,11 +62,13 @@ function GamePageContent() {
   const gameFen = liveGameState?.fen;
   
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
-  
   const { toast } = useToast();
-  
   const finalGameOver = useMemo(() => firestoreGame?.status === 'completed', [firestoreGame]);
   
+  const [opponentPresence, setOpponentPresence] = useState<{ state: string } | null>(null);
+  const [abandonmentDeadline, setAbandonmentDeadline] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal' | 'castle' | 'promotion') => {
     if (typeof window !== 'undefined') {
       try {
@@ -71,12 +79,47 @@ function GamePageContent() {
       }
     }
   }, []);
+  
+  // Opponent Presence Listener
+  useEffect(() => {
+    if (!realtimeDB || !opponentId) return;
+    const presenceRef = ref(realtimeDB, `presence/${opponentId}`);
+    const unsubscribe = onValue(presenceRef, (snapshot) => {
+        setOpponentPresence(snapshot.val());
+    });
+    return () => unsubscribe();
+  }, [realtimeDB, opponentId]);
 
+  // Abandonment Deadline Listener
   useEffect(() => {
     if (!realtimeDB || !gameId) return;
+    const deadlineRef = ref(realtimeDB, `abandonmentDeadlines/${gameId}`);
+    const unsubscribe = onValue(deadlineRef, (snapshot) => {
+        setAbandonmentDeadline(snapshot.val());
+    });
+    return () => unsubscribe();
+  }, [realtimeDB, gameId]);
 
+  // Countdown Timer Effect
+  useEffect(() => {
+    if (!abandonmentDeadline || opponentPresence?.state !== 'offline' || finalGameOver) {
+      setCountdown(null);
+      return;
+    }
+    const intervalId = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((abandonmentDeadline - Date.now()) / 1000));
+      setCountdown(remaining);
+      if (remaining === 0) {
+        clearInterval(intervalId);
+      }
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, [abandonmentDeadline, opponentPresence, finalGameOver]);
+  
+  // Live Game State Listener
+  useEffect(() => {
+    if (!realtimeDB || !gameId) return;
     const gameRef = ref(realtimeDB, `liveGames/${gameId}`);
-    
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -87,13 +130,8 @@ function GamePageContent() {
       }
     }, (error) => {
       console.error("Realtime DB Error:", error);
-      toast({
-          variant: 'destructive',
-          title: 'Error loading game',
-          description: "There was a problem connecting to the database."
-      });
+      toast({ variant: 'destructive', title: 'Error loading game', description: "There was a problem connecting to the database." });
     });
-
     return () => unsubscribe();
   }, [realtimeDB, gameId, toast, firestoreGame, isFirestoreGameLoading]);
 
@@ -118,7 +156,7 @@ function GamePageContent() {
     }
   }, [finalGameOver, playSound]);
 
-
+  // Clock management effect
   useEffect(() => {
     if (finalGameOver || !liveGameState?.clocks || !firestoreGame) {
         if(firestoreGame?.timeControl && !liveGameState?.clocks) {
@@ -319,8 +357,6 @@ function GamePageContent() {
     }
   };
 
-  const opponentId = firestoreGame?.player1Id === user?.uid ? firestoreGame?.player2Id : firestoreGame?.player1Id;
-
   const boardOrientation = myColor === 'b' ? 'black' : 'white';
 
   const topPlayer = boardOrientation === 'white' ? blackPlayer : whitePlayer;
@@ -338,6 +374,11 @@ function GamePageContent() {
   );
   
   const bottomPlayerIsTurn = !finalGameOver && myTurn;
+  
+  const showOpponentDisconnectedBanner = 
+    opponentPresence?.state === 'offline' && 
+    countdown !== null && 
+    firestoreGame?.status === 'inprogress';
 
 
   if (isFirestoreGameLoading || arePlayersLoading || !gameFen) {
@@ -360,7 +401,7 @@ function GamePageContent() {
     }
 
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg z-20">
         <div className="text-center text-white p-8 rounded-lg">
           {isDraw ? (
             <Handshake className="w-24 h-24 text-amber-400 mx-auto" />
@@ -396,6 +437,12 @@ function GamePageContent() {
             />
           )}
           <div className="relative">
+             {showOpponentDisconnectedBanner && (
+              <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-center p-2 bg-yellow-500/90 text-black text-sm font-semibold">
+                <WifiOff className="mr-2 h-4 w-4" />
+                Opponent disconnected ({countdown}s remaining...)
+              </div>
+            )}
             <Chessboard orientation={boardOrientation}>
                 <ChessPieces
                     fen={gameFen}
@@ -410,7 +457,7 @@ function GamePageContent() {
             </Chessboard>
             {renderGameOver()}
             {!finalGameOver && firestoreGame?.status === 'waiting' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg z-20">
                     <div className="text-white text-lg text-center p-4">
                         <p>Waiting for an opponent...</p>
                         <p className="text-sm text-muted-foreground mt-2">The game will start once someone joins.</p>
@@ -463,5 +510,3 @@ export default function GamePage() {
     </Suspense>
   );
 }
-
-    
