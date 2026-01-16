@@ -38,12 +38,13 @@ export function UserPresence() {
         lastChanged: rtdbServerTimestamp(),
       });
       
-      const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
+      // This is a failsafe for tab closing, but onDisconnect is more reliable
+      const handleBeforeUnload = () => {
           if (user?.uid) {
-            const userStatusRef = doc(firestore, 'users', user.uid);
-            await updateDoc(userStatusRef, {
-                onlineStatus: 'offline',
-                lastSeen: serverTimestamp(),
+            // This is synchronous and may not complete, onDisconnect is the primary mechanism
+            set(userPresenceRef, {
+                state: 'offline',
+                lastChanged: rtdbServerTimestamp(),
             });
           }
       };
