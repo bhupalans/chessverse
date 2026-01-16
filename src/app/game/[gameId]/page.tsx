@@ -14,7 +14,7 @@ import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@
 import type { User as UserType, Game as GameType, LastMove, LiveGame } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, get, set, serverTimestamp as rtdbServerTimestamp } from 'firebase/database';
 import { doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -222,6 +222,49 @@ function GamePageContent() {
       handleGameOver(firestoreGame.reason || 'Game Over', firestoreGame.winnerId);
     }
   }, [firestoreGame, gameOverState, handleGameOver]);
+
+    // Update user presence when entering/leaving the game
+  useEffect(() => {
+    if (!user || !realtimeDB || !gameId || !firestoreGame || firestoreGame.isBotGame) {
+      return;
+    }
+
+    const userPresenceRef = ref(realtimeDB, `/presence/${user.uid}`);
+
+    if (firestoreGame.status === 'inprogress') {
+      const ingamePresence = {
+        state: 'ingame',
+        gameId,
+        lastChanged: rtdbServerTimestamp(),
+      };
+      set(userPresenceRef, ingamePresence);
+
+      // When the component unmounts (user navigates away), set state back to 'online'
+      return () => {
+         get(userPresenceRef).then(snapshot => {
+            if (snapshot.exists() && snapshot.val().gameId === gameId) {
+                const onlinePresence = {
+                    state: 'online',
+                    lastChanged: rtdbServerTimestamp(),
+                    gameId: null,
+                };
+                set(userPresenceRef, onlinePresence);
+            }
+        });
+      };
+    } else {
+      // Game is not in progress, ensure presence isn't 'ingame' for this game
+      get(userPresenceRef).then(snapshot => {
+        if (snapshot.exists() && snapshot.val().gameId === gameId) {
+          set(userPresenceRef, {
+            state: 'online',
+            lastChanged: rtdbServerTimestamp(),
+            gameId: null
+          });
+        }
+      });
+    }
+  }, [user, realtimeDB, gameId, firestoreGame?.status, firestoreGame?.isBotGame]);
 
   const makeMove = async (move: { from: ChessJsSquare, to: ChessJsSquare, promotion?: string }) => {
       if (!myTurn) {
