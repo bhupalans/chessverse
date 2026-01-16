@@ -55,22 +55,11 @@ function GamePageContent() {
 
   const gameFen = liveGameState?.fen;
   
-  const game = useMemo(() => {
-    if (!gameFen) return new Chess();
-    try {
-      return new Chess(gameFen);
-    } catch (e) {
-      console.error("Invalid FEN string:", gameFen);
-      return new Chess();
-    }
-  }, [gameFen]);
-
-  const [gameOverState, setGameOverState] = useState<{ winner: string, reason: string } | null>(null);
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
   
   const { toast } = useToast();
   
-  const finalGameOver = useMemo(() => !!gameOverState || game.isGameOver() || firestoreGame?.status === 'completed', [gameOverState, game, firestoreGame]);
+  const finalGameOver = useMemo(() => firestoreGame?.status === 'completed', [firestoreGame]);
   
   const playSound = useCallback((sound: 'move' | 'capture' | 'check' | 'game-end' | 'illegal' | 'castle' | 'promotion') => {
     if (typeof window !== 'undefined') {
@@ -121,6 +110,13 @@ function GamePageContent() {
       }
     }
   }, [liveGameState, previousFen, playSound]);
+
+  // Play game-end sound when the game completes
+  useEffect(() => {
+    if (finalGameOver) {
+      playSound('game-end');
+    }
+  }, [finalGameOver, playSound]);
 
 
   useEffect(() => {
@@ -203,25 +199,6 @@ function GamePageContent() {
     }
     return { whitePlayer: p1, blackPlayer: p2, arePlayersLoading: false };
   }, [firestoreGame, isFirestoreGameLoading, player1Profile, player2Profile, isP1Loading, isP2Loading, isBotGame]);
-
-  const handleGameOver = useCallback((reason: string, winnerId?: 'w' | 'b' | 'd') => {
-      playSound('game-end');
-      
-      let winnerName = 'draw';
-      if (winnerId !== 'd' && whitePlayer && blackPlayer) {
-          winnerName = winnerId === 'w' ? whitePlayer.username : blackPlayer.username;
-      }
-      
-      if (!gameOverState) {
-        setGameOverState({ winner: winnerName, reason });
-      }
-  }, [playSound, whitePlayer, blackPlayer, gameOverState]);
-  
-  useEffect(() => {
-    if (firestoreGame?.status === 'completed' && !gameOverState) {
-      handleGameOver(firestoreGame.reason || 'Game Over', firestoreGame.winnerId);
-    }
-  }, [firestoreGame, gameOverState, handleGameOver]);
 
     // Update user presence when entering/leaving the game
   useEffect(() => {
@@ -370,7 +347,41 @@ function GamePageContent() {
     return <div className="flex h-full items-center justify-center">Game not found.</div>;
   }
 
-  const winnerColor = firestoreGame.winnerId;
+  // --- Game Over UI Logic ---
+  const renderGameOver = () => {
+    if (!finalGameOver || arePlayersLoading) return null;
+
+    const { reason, winnerId } = firestoreGame;
+    const isDraw = winnerId === 'd';
+    
+    let winnerName = 'Draw';
+    if (!isDraw && whitePlayer && blackPlayer) {
+      winnerName = winnerId === 'w' ? whitePlayer.username : blackPlayer.username;
+    }
+
+    return (
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
+        <div className="text-center text-white p-8 rounded-lg">
+          {isDraw ? (
+            <Handshake className="w-24 h-24 text-amber-400 mx-auto" />
+          ) : (
+            <Crown className="w-24 h-24 text-yellow-400 mx-auto" />
+          )}
+          <h2 className="text-3xl font-bold mt-4">Game Over</h2>
+          <p className="text-lg mt-1 capitalize">{reason}</p>
+          <p className="text-2xl font-semibold mt-4">
+            {isDraw ? "It's a Draw!" : `${winnerName} Wins!`}
+          </p>
+          <Button 
+            className="mt-6" 
+            onClick={() => router.push('/')}>
+            Back to Lobby
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
 
   return (
       <div className="flex h-full flex-col items-center justify-center bg-background p-4 lg:p-8">
@@ -397,28 +408,8 @@ function GamePageContent() {
                     orientation={boardOrientation}
                 />
             </Chessboard>
-            {gameOverState && (
-               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
-                <div className="text-center text-white p-8 rounded-lg">
-                    {winnerColor === 'd' ? (
-                       <Handshake className="w-24 h-24 text-amber-400 mx-auto" />
-                    ) : (
-                       <Crown className="w-24 h-24 text-yellow-400 mx-auto" />
-                    )}
-                    <h2 className="text-3xl font-bold mt-4">Game Over</h2>
-                    <p className="text-lg mt-1">{gameOverState.reason}</p>
-                    <p className="text-2xl font-semibold mt-4">
-                      {winnerColor === 'd' ? "It's a Draw!" : `${gameOverState.winner} Wins!`}
-                    </p>
-                    <Button 
-                      className="mt-6" 
-                      onClick={() => router.push('/')}>
-                      Back to Lobby
-                    </Button>
-                </div>
-              </div>
-            )}
-             {!finalGameOver && firestoreGame?.status === 'waiting' && (
+            {renderGameOver()}
+            {!finalGameOver && firestoreGame?.status === 'waiting' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
                     <div className="text-white text-lg text-center p-4">
                         <p>Waiting for an opponent...</p>
@@ -472,3 +463,5 @@ export default function GamePage() {
     </Suspense>
   );
 }
+
+    

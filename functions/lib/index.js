@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handleGameAction = exports.initializeLiveGame = exports.submitMove = void 0;
+exports.handlePlayerDisconnect = exports.handleGameAction = exports.initializeLiveGame = exports.submitMove = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const chess_js_1 = require("chess.js");
@@ -522,6 +522,81 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
         }
         console.error('Error handling game action:', error);
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
+    }
+});
+exports.handlePlayerDisconnect = functions.database
+    .ref('/presence/{uid}')
+    .onWrite(async (change, context) => {
+    const { uid } = context.params;
+    const beforeData = change.before.val();
+    const afterData = change.after.val();
+    // We only care about transitions TO offline FROM ingame
+    if ((beforeData === null || beforeData === void 0 ? void 0 : beforeData.state) !== 'ingame' || (afterData === null || afterData === void 0 ? void 0 : afterData.state) !== 'offline') {
+        return null;
+    }
+    const gameId = beforeData.gameId;
+    if (!gameId) {
+        return null;
+    }
+    console.log(`Player ${uid} disconnected from game ${gameId}. Starting 30s grace period.`);
+    // Wait for 30 seconds
+    await new Promise(resolve => setTimeout(resolve, 30000));
+    console.log(`Grace period ended for ${uid}. Checking status...`);
+    const currentPresenceSnap = await admin.database().ref(`/presence/${uid}`).once('value');
+    const currentPresenceData = currentPresenceSnap.val();
+    // If the user has reconnected or is no longer offline, cancel abandonment.
+    if ((currentPresenceData === null || currentPresenceData === void 0 ? void 0 : currentPresenceData.state) !== 'offline') {
+        console.log(`Player ${uid} reconnected. Cancelling game abandonment for ${gameId}.`);
+        return null;
+    }
+    console.log(`Player ${uid} is still offline. Abandoning game ${gameId}.`);
+    const gameRef = firestore.collection('games').doc(gameId);
+    try {
+        return await firestore.runTransaction(async (transaction) => {
+            const gameDoc = await transaction.get(gameRef);
+            if (!gameDoc.exists) {
+                console.log(`Game ${gameId} not found. Cannot abandon.`);
+                return;
+            }
+            const gameData = gameDoc.data();
+            if (gameData.status !== 'inprogress' || gameData.isBotGame) {
+                console.log(`Game ${gameId} not abandonable. Status: ${gameData.status}, isBotGame: ${gameData.isBotGame}.`);
+                return;
+            }
+            const disconnectedPlayerIsP1 = uid === gameData.player1Id;
+            const opponentId = disconnectedPlayerIsP1 ? gameData.player2Id : gameData.player1Id;
+            const winnerColor = disconnectedPlayerIsP1 ? gameData.player2Color : gameData.player1Color;
+            if (!winnerColor) {
+                console.error(`Could not determine winner for abandoned game ${gameId}.`);
+                return;
+            }
+            const updates = {
+                status: 'completed',
+                winnerId: winnerColor,
+                reason: 'abandoned',
+                completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+            console.log(`Updating game ${gameId} with abandonment data. Winner: ${winnerColor}`);
+            // This will also update user stats.
+            await calculateAndApplyElo(transaction, gameRef, gameData, winnerColor);
+            transaction.update(gameRef, updates);
+            // After the game is over, we can set the opponent's presence back to 'online'
+            // if they are still showing as 'ingame' for this specific game.
+            if (opponentId) {
+                const opponentPresenceRef = admin.database().ref(`/presence/${opponentId}`);
+                // This is an async operation but we don't need to wait for it.
+                opponentPresenceRef.once('value').then(snap => {
+                    if (snap.exists() && snap.val().gameId === gameId) {
+                        console.log(`Setting opponent ${opponentId} state to 'online'.`);
+                        opponentPresenceRef.update({ state: 'online', gameId: null });
+                    }
+                });
+            }
+        });
+    }
+    catch (error) {
+        console.error(`Failed to process abandonment for game ${gameId}:`, error);
+        throw error; // Let Cloud Functions handle retries.
     }
 });
 //# sourceMappingURL=index.js.map
