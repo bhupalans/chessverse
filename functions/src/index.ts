@@ -599,7 +599,7 @@ export const handlePlayerDisconnect = functions.database
       if (!gameId) return null;
 
       const gameDoc = await firestore.collection('games').doc(gameId).get();
-      if (!gameDoc.exists() || gameDoc.data()?.status !== 'inprogress' || gameDoc.data()?.isBotGame) {
+      if (!gameDoc.exists || gameDoc.data()?.status !== 'inprogress' || gameDoc.data()?.isBotGame) {
         return null;
       }
       
