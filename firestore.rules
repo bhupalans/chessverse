@@ -1,23 +1,26 @@
-
 /**
  * Core Philosophy: This ruleset enforces a strict user-ownership model for user-specific data,
  * while allowing public read access for shared game data to enable a lobby system.
  *
  * Data Structure:
- * - `/users/{userId}`: Private data tree for each user, accessible only by the owner.
- * - `/games/{gameId}`: Publicly listable and readable collection for game states.
+ * - /users/{userId}: Private data tree for each user, accessible only by the owner.
+ * - /games/{gameId}: Publicly listable and readable collection for game states.
  *   Write access is restricted to the players involved in the game or to Cloud Functions.
+ * - /tournaments/{tournamentId}: Publicly readable data for tournament lobbies.
+ *   Write access is restricted entirely to Cloud Functions.
  *
  * Key Security Decisions:
  * - User Listing Disabled: To protect user privacy, listing all users is forbidden.
- * - Path-Based Ownership: Access to any document under `/users/{userId}` is granted only
- *   if the requester's UID matches the `{userId}` in the path.
- * - Public Game Lobby: The `/games` collection is readable by any authenticated user to
+ * - Path-Based Ownership: Access to any document under /users/{userId} is granted only
+ *   if the requester's UID matches the {userId} in the path.
+ * - Public Game Lobby: The /games collection is readable by any authenticated user to
  *   populate the game lobby.
  * - Restricted Game Writes: Only the players participating in a game can update its state.
  *   This prevents cheating or griefing by outside users.
- * - Game Outcome Integrity: Game completion status (`status`, `winnerId`, `reason`) can only
+ * - Game Outcome Integrity: Game completion status (status, winnerId, reason) can only
  *   be set by a server-side process (Cloud Function), preventing clients from declaring victory.
+ * - Server-Authoritative Tournaments: All tournament data is read-only for clients. All
+ *   modifications (creation, pairings, results) are handled exclusively by Cloud Functions.
  * - Default Deny: All operations are denied by default unless explicitly permitted.
  */
 rules_version = '2';
@@ -160,7 +163,29 @@ service cloud.firestore {
       // Only a player can delete a game they are in (e.g. declining an invite).
       allow delete: if isSignedIn() && isPlayer(resource);
     }
+    
+    /**
+     * @description Defines access control for tournament documents. Tournaments are
+     * publicly readable for the lobby. Writing is restricted to the server.
+     */
+    match /tournaments/{tournamentId} {
+      // Allow any authenticated user to see the list of tournaments.
+      allow read, list: if isSignedIn();
+      
+      // ONLY allow the server (Cloud Functions) to create, update, or delete tournaments.
+      allow write: if isServer();
+
+      /**
+       * @description Defines access control for players within a tournament. Player lists
+       * are readable for UI purposes. Writes are restricted to the server.
+       */
+      match /players/{playerId} {
+        // Allow any authenticated user to read the list of players in a tournament.
+        allow read, list: if isSignedIn();
+
+        // ONLY allow the server to add, update, or remove players from a tournament.
+        allow write: if isServer();
+      }
+    }
   }
 }
-
-    
