@@ -306,7 +306,7 @@ async function pairAndCreateMatches(tournamentId: string) {
         
         const colors = Math.random() < 0.5 ? ['w', 'b'] : ['b', 'w'];
         const whitePlayer = colors[0] === 'w' ? player1 : player2;
-        const blackPlayer = colors[0] === 'b' ? player1 : player2;
+        //const blackPlayer = colors[0] === 'b' ? player1 : player2;
 
         batch.set(gameRef, {
             player1Id: player1.id,
@@ -487,7 +487,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
     }
 });
 
-
+/*
 export const onGameWrite = functions.firestore
     .document('/games/{gameId}')
     .onWrite(async (change, context) => {
@@ -550,6 +550,106 @@ export const onGameWrite = functions.firestore
             await pairAndCreateMatches(tournamentId);
         }
     });
+*/
+    export const onGameWrite = functions.firestore
+    .document('/games/{gameId}')
+    .onWrite(async (change, context) => {
+      const gameId = context.params.gameId;
+      const afterData = change.after.data();
+      const beforeData = change.before.data();
+  
+      // --- Game Initialization ---
+      if (afterData && afterData.status === 'inprogress' && beforeData?.status !== 'inprogress') {
+        const liveGameRef = db.ref(`liveGames/${gameId}`);
+        const snapshot = await liveGameRef.once('value');
+  
+        if (!snapshot.exists()) {
+          const startingFen =
+            'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  
+          const liveGameState: any = { fen: startingFen, turn: 'w' };
+          const timeControl = afterData.timeControl || { initial: 300000, increment: 0 };
+  
+          if (typeof timeControl.initial === 'number') {
+            const initialSeconds = Math.floor(timeControl.initial / 1000);
+            const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
+  
+            liveGameState.clocks = {
+              white: initialSeconds,
+              black: initialSeconds,
+              running: 'w',
+              lastTick: admin.database.ServerValue.TIMESTAMP,
+              increment: incrementSeconds
+            };
+          }
+  
+          await liveGameRef.set(liveGameState);
+          console.log(`Live game created for game ${gameId}`);
+        }
+      }
+  
+      // --- Game Deletion/Cleanup ---
+      if (!afterData) {
+        await db.ref(`liveGames/${gameId}`).remove();
+        console.log(`Live game removed for deleted game ${gameId}`);
+        return null; // ⬅️ explicit return
+      }
+  
+      // --- Tournament Game Completion ---
+      if (
+        beforeData?.status === 'inprogress' &&
+        afterData?.status === 'completed' &&
+        afterData.isTournamentGame
+      ) {
+        console.log(`Tournament game ${gameId} completed.`);
+        const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
+  
+        if (!tournamentId) return null;
+  
+        const player1Won =
+          (player1Color === 'w' && winnerId === 'w') ||
+          (player1Color === 'b' && winnerId === 'b');
+  
+        const player2Won =
+          (player1Color === 'w' && winnerId === 'b') ||
+          (player1Color === 'b' && winnerId === 'w');
+  
+        let p1score = 0;
+        let p2score = 0;
+  
+        if (winnerId === 'd') {
+          p1score = 0.5;
+          p2score = 0.5;
+        } else if (player1Won) {
+          p1score = 1;
+        } else if (player2Won) {
+          p2score = 1;
+        }
+  
+        const p1Ref = firestore.doc(`tournaments/${tournamentId}/players/${player1Id}`);
+        const p2Ref = firestore.doc(`tournaments/${tournamentId}/players/${player2Id}`);
+  
+        await firestore.batch()
+          .update(p1Ref, {
+            score: admin.firestore.FieldValue.increment(p1score),
+            gamesPlayed: admin.firestore.FieldValue.increment(1),
+            activeGameId: null
+          })
+          .update(p2Ref, {
+            score: admin.firestore.FieldValue.increment(p2score),
+            gamesPlayed: admin.firestore.FieldValue.increment(1),
+            activeGameId: null
+          })
+          .commit();
+  
+        console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
+        await pairAndCreateMatches(tournamentId);
+      }
+  
+      return null; // ⬅️ FINAL REQUIRED RETURN
+    });
+  
+
 
 export const handleGameAction = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -641,7 +741,7 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
     }
 });
 
-
+/*
 export const handlePlayerDisconnect = functions.database
   .ref('/presence/{uid}')
   .onWrite(async (change, context) => {
@@ -721,6 +821,103 @@ export const handlePlayerDisconnect = functions.database
     }
   });
 
+  */
+
+  export const handlePlayerDisconnect = functions.database
+  .ref('/presence/{uid}')
+  .onWrite(async (change, context) => {
+    const { uid } = context.params;
+    const beforeData = change.before.val();
+    const afterData = change.after.val();
+
+    if (beforeData?.state === 'ingame' && afterData?.state === 'offline') {
+      const gameId = beforeData.gameId;
+      if (!gameId) return null;
+
+      const gameDoc = await firestore.collection('games').doc(gameId).get();
+
+      // ✅ FIXED HERE
+      if (!gameDoc.exists || gameDoc.data()?.status !== 'inprogress' || gameDoc.data()?.isBotGame) {
+        return null;
+      }
+
+      const gracePeriod = 30000;
+      await new Promise(resolve => setTimeout(resolve, gracePeriod));
+
+      const currentPresenceSnap = await admin.database().ref(`/presence/${uid}`).once('value');
+      if (currentPresenceSnap.val()?.state !== 'offline') return null;
+
+      console.log(`Player ${uid} abandoned game ${gameId}.`);
+
+      const gameRef = firestore.collection('games').doc(gameId);
+
+      try {
+        await firestore.runTransaction(async (transaction) => {
+          const freshGameDoc = await transaction.get(gameRef);
+          if (!freshGameDoc.exists) return;
+
+          const gameData = freshGameDoc.data()!;
+          if (gameData.status !== 'inprogress') return;
+
+          const disconnectedPlayerIsP1 = uid === gameData.player1Id;
+          const opponentId = disconnectedPlayerIsP1
+            ? gameData.player2Id
+            : gameData.player1Id;
+
+          const winnerColor = disconnectedPlayerIsP1
+            ? gameData.player2Color
+            : gameData.player1Color;
+
+          if (!winnerColor) return;
+
+          const updates = {
+            status: 'completed' as const,
+            winnerId: winnerColor,
+            reason: 'abandoned' as const,
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+
+          await calculateAndApplyElo(transaction, gameRef, gameData, winnerColor);
+          transaction.update(gameRef, updates);
+
+          // Tournament handling
+          if (gameData.isTournamentGame && gameData.tournamentId) {
+            const tournamentId = gameData.tournamentId;
+            const winnerPlayerId = opponentId;
+            const loserPlayerId = uid;
+
+            const winnerRef = firestore.doc(`tournaments/${tournamentId}/players/${winnerPlayerId}`);
+            const loserRef = firestore.doc(`tournaments/${tournamentId}/players/${loserPlayerId}`);
+
+            transaction.update(winnerRef, {
+              score: admin.firestore.FieldValue.increment(1),
+              gamesPlayed: admin.firestore.FieldValue.increment(1),
+              activeGameId: null
+            });
+
+            transaction.update(loserRef, {
+              gamesPlayed: admin.firestore.FieldValue.increment(1),
+              activeGameId: null
+            });
+          }
+
+          if (opponentId) {
+            const opponentPresenceRef = admin.database().ref(`/presence/${opponentId}`);
+            opponentPresenceRef.once('value').then(snap => {
+              if (snap.exists() && snap.val().gameId === gameId) {
+                opponentPresenceRef.update({ state: 'online', gameId: null });
+              }
+            });
+          }
+        });
+      } catch (error) {
+        console.error(`Failed to process abandonment for game ${gameId}:`, error);
+      }
+    }
+
+    return null;
+  });
+ 
 
 // --- SCHEDULED FUNCTIONS ---
 

@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Crown, History, LogIn, LogOut, User, Trophy } from 'lucide-react';
+import { Crown, History, LogIn, LogOut, User, Trophy, BarChart3 } from 'lucide-react';
 import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
@@ -53,19 +53,26 @@ export function Header() {
             <span className="font-bold">ChessVerse</span>
           </Link>
           {user && (
-            <nav className="flex items-center space-x-6 text-sm font-medium">
+            <nav className="hidden items-center space-x-6 text-sm font-medium md:flex">
+               <Link
+                href="/tournaments"
+                className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center"
+              >
+                <Trophy className="mr-2 h-4 w-4" />
+                Tournaments
+              </Link>
                <Link
                 href="/leaderboard"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
+                className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center"
               >
-                <Trophy className="mr-2 inline-block h-4 w-4" />
+                 <BarChart3 className="mr-2 h-4 w-4" />
                 Leaderboard
               </Link>
               <Link
                 href="/history"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
+                className="transition-colors hover:text-foreground/80 text-foreground/60 flex items-center"
               >
-                <History className="mr-2 inline-block h-4 w-4" />
+                <History className="mr-2 h-4 w-4" />
                 History
               </Link>
             </nav>
@@ -102,9 +109,13 @@ export function Header() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
+                 <DropdownMenuItem onClick={() => router.push('/tournaments')}>
+                  <Trophy className="mr-2 h-4 w-4" />
+                  <span>Tournaments</span>
+                </DropdownMenuItem>
+                 <DropdownMenuItem onClick={() => router.push('/leaderboard')}>
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  <span>Leaderboard</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push('/history')}>
                   <History className="mr-2 h-4 w-4" />
