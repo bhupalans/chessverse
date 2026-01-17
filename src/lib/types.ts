@@ -67,6 +67,8 @@ export type Game = {
   blackEloBefore?: number;
   whiteEloAfter?: number;
   blackEloAfter?: number;
+  isTournamentGame?: boolean;
+  tournamentId?: string;
 };
 
 export type HistoryGame = {
@@ -91,3 +93,25 @@ export type LiveGame = {
     lastMove?: LastMove;
     clocks?: LiveClock;
 }
+
+export type Tournament = {
+  id: string;
+  name: string;
+  timeControl: TimeControl;
+  entryFee: number;
+  startsAt: any; // Firestore Timestamp
+  endsAt: any; // Firestore Timestamp
+  status: 'scheduled' | 'running' | 'completed';
+  createdAt: any; // Firestore Timestamp
+  finalStandings?: any[];
+};
+
+export type TournamentPlayer = {
+  uid: string;
+  username: string;
+  eloRating: number;
+  score: number;
+  gamesPlayed: number;
+  activeGameId: string | null;
+  joinedAt: any; // Firestore Timestamp
+};

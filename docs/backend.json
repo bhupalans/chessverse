@@ -69,8 +69,8 @@
           "type": "string",
           "description": "Reference to User 2 (the invited player)."
         },
-         "player1": { "$ref": "#/entities/User" },
-         "player2": { "$ref": "#/entities/User" },
+        "player1": { "$ref": "#/entities/User" },
+        "player2": { "$ref": "#/entities/User" },
         "startTime": {
           "type": "string",
           "description": "Timestamp indicating the start time of the game.",
@@ -122,6 +122,14 @@
               "description": "Time increment per move in seconds."
             }
           }
+        },
+        "isTournamentGame": {
+          "type": "boolean",
+          "description": "Flag indicating if the game is part of a tournament."
+        },
+        "tournamentId": {
+          "type": "string",
+          "description": "ID of the tournament this game belongs to."
         }
       },
       "required": [
@@ -131,6 +139,130 @@
         "status",
         "fen",
         "turn"
+      ]
+    },
+    "TimeControl": {
+      "title": "Time Control",
+      "type": "object",
+      "description": "Time control settings for a game.",
+      "properties": {
+        "initial": {
+          "type": "number",
+          "description": "Initial time for each player in milliseconds."
+        },
+        "increment": {
+          "type": "number",
+          "description": "Time increment per move in milliseconds."
+        }
+      },
+      "required": ["initial", "increment"]
+    },
+    "Tournament": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Tournament",
+      "type": "object",
+      "description": "Represents a chess tournament.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the tournament."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the tournament."
+        },
+        "timeControl": {
+          "$ref": "#/entities/TimeControl"
+        },
+        "entryFee": {
+          "type": "number",
+          "description": "Entry fee for the tournament."
+        },
+        "startsAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp for when the tournament starts."
+        },
+        "endsAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp for when the tournament ends."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "scheduled",
+            "running",
+            "completed"
+          ],
+          "description": "Current status of the tournament."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the tournament was created."
+        },
+        "finalStandings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "description": "Final rankings of players."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "timeControl",
+        "startsAt",
+        "endsAt",
+        "status",
+        "createdAt"
+      ]
+    },
+    "TournamentPlayer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "TournamentPlayer",
+      "type": "object",
+      "description": "Represents a player's state within a tournament.",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's ID."
+        },
+        "username": {
+          "type": "string"
+        },
+        "eloRating": {
+          "type": "number"
+        },
+        "score": {
+          "type": "number",
+          "description": "Player's current score in the tournament."
+        },
+        "gamesPlayed": {
+          "type": "number",
+          "description": "Number of games played in the tournament."
+        },
+        "activeGameId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ID of the active game, if any."
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the player joined."
+        }
+      },
+      "required": [
+        "uid",
+        "username",
+        "score",
+        "gamesPlayed",
+        "joinedAt"
       ]
     }
   },
@@ -170,6 +302,42 @@
             {
               "name": "gameId",
               "description": "The unique identifier for the game."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/tournaments/{tournamentId}",
+        "definition": {
+          "entityName": "Tournament",
+          "schema": {
+            "$ref": "#/backend/entities/Tournament"
+          },
+          "description": "Stores tournament information.",
+          "params": [
+            {
+              "name": "tournamentId",
+              "description": "The unique identifier for the tournament."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/tournaments/{tournamentId}/players/{playerId}",
+        "definition": {
+          "entityName": "TournamentPlayer",
+          "schema": {
+            "$ref": "#/backend/entities/TournamentPlayer"
+          },
+          "description": "Stores individual player data within a tournament.",
+          "params": [
+            {
+              "name": "tournamentId",
+              "description": "The unique identifier for the tournament."
+            },
+            {
+              "name": "playerId",
+              "description": "The user's unique ID."
             }
           ]
         }

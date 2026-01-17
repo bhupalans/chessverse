@@ -9,6 +9,29 @@ const db = admin.database();
 const firestore = admin.firestore();
 
 
+// --- TYPE DEFINITIONS ---
+interface Tournament {
+    id: string;
+    name: string;
+    timeControl: { initial: number; increment: number };
+    startsAt: admin.firestore.Timestamp;
+    endsAt: admin.firestore.Timestamp;
+    status: 'scheduled' | 'running' | 'completed';
+}
+
+interface TournamentPlayer {
+    uid: string;
+    username: string;
+    eloRating: number;
+    score: number;
+    gamesPlayed: number;
+    activeGameId: string | null;
+    joinedAt: admin.firestore.Timestamp;
+    // For pairing
+    hasPlayedAgainst?: string[];
+}
+
+
 // --- ELO Calculation ---
 async function calculateAndApplyElo(
     transaction: admin.firestore.Transaction,
@@ -16,9 +39,8 @@ async function calculateAndApplyElo(
     gameData: admin.firestore.DocumentData,
     winnerId: 'w' | 'b' | 'd'
 ) {
-    // 1. Skip ELO for bot games or aborted games
     if (gameData.isBotGame || gameData.reason === 'abort') {
-        return; // Do not calculate ELO for bot games or aborted games
+        return;
     }
 
     const { player1Id, player2Id, player1Color } = gameData;
@@ -41,23 +63,20 @@ async function calculateAndApplyElo(
 
         const player1 = player1Doc.data()!;
         const player2 = player2Doc.data()!;
-
-        // 2. Default missing ELO fields
         const elo1 = player1.eloRating || 1200;
         const elo2 = player2.eloRating || 1200;
 
-        // 3. Determine scores
         let score1, score2;
         const player1IsWinner = (player1Color === 'w' && winnerId === 'w') || (player1Color === 'b' && winnerId === 'b');
         const player2IsWinner = (player1Color === 'w' && winnerId === 'b') || (player1Color === 'b' && winnerId === 'w');
 
-        if (winnerId === 'd') { // Draw
+        if (winnerId === 'd') {
             score1 = 0.5;
             score2 = 0.5;
-        } else if (player1IsWinner) { // Player 1 won
+        } else if (player1IsWinner) {
             score1 = 1;
             score2 = 0;
-        } else if (player2IsWinner) { // Player 2 won
+        } else if (player2IsWinner) {
             score1 = 0;
             score2 = 1;
         } else {
@@ -65,14 +84,12 @@ async function calculateAndApplyElo(
             return;
         }
 
-        // 4. Compute ELO
         const expectedScore1 = 1 / (1 + Math.pow(10, (elo2 - elo1) / 400));
         const expectedScore2 = 1 / (1 + Math.pow(10, (elo1 - elo2) / 400));
         
         const newElo1 = Math.round(elo1 + kFactor * (score1 - expectedScore1));
         const newElo2 = Math.round(elo2 + kFactor * (score2 - expectedScore2));
 
-        // 5. Update users atomically
         transaction.update(player1Ref, {
             eloRating: newElo1,
             gamesPlayed: admin.firestore.FieldValue.increment(1),
@@ -89,13 +106,11 @@ async function calculateAndApplyElo(
             draws: score2 === 0.5 ? admin.firestore.FieldValue.increment(1) : player2.draws || 0,
         });
         
-        // 6. Write ELO snapshot to game
         const whiteEloBefore = player1Color === 'w' ? elo1 : elo2;
         const blackEloBefore = player1Color === 'w' ? elo2 : elo1;
         const whiteEloAfter  = player1Color === 'w' ? newElo1 : newElo2;
         const blackEloAfter  = player1Color === 'w' ? newElo2 : newElo1;
         
-        // This update is now part of the transaction, so we pass the transaction object to `update`.
         transaction.update(gameRef, {
           whiteEloBefore,
           blackEloBefore,
@@ -104,12 +119,9 @@ async function calculateAndApplyElo(
           eloProcessed: true,
         });
         
-        
         console.log(`ELO updated for game ${gameRef.id}. P1: ${elo1} -> ${newElo1}, P2: ${elo2} -> ${newElo2}`);
-
     } catch (error) {
         console.error(`Failed to update ELO for game ${gameRef.id}:`, error);
-        // Don't re-throw, as we don't want to fail the entire game-ending transaction.
     }
 }
 
@@ -120,12 +132,12 @@ async function handleBotMove(gameId: string, firestoreGameRef: admin.firestore.D
     const snapshot = await gameRef.once('value');
     const gameData = snapshot.val();
     
-    if (!gameData) return; // Should not happen
+    if (!gameData) return;
 
     const game = new Chess(gameData.fen);
     
     const botMoveSan = getBotMove(game, firestoreGameData.botDifficulty || 'medium');
-    if (botMoveSan === null) return; // No legal moves for bot
+    if (botMoveSan === null) return;
     
     const botMove = game.move(botMoveSan);
     
@@ -226,26 +238,139 @@ function getBotMove(game: Chess, difficulty: string): string | null {
         }
     }
     
-    // Default to random move for 'easy' or if no captures for 'medium'
     return legalMoves[Math.floor(Math.random() * legalMoves.length)].san;
 }
 
 
+// --- TOURNAMENT LOGIC ---
+
+async function pairAndCreateMatches(tournamentId: string) {
+    console.log(`Starting pairing for tournament: ${tournamentId}`);
+    const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
+    const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('score', 'desc').get();
+
+    if (playersSnapshot.empty) {
+        console.log(`No available players to pair in tournament ${tournamentId}.`);
+        return;
+    }
+
+    const availablePlayers = playersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TournamentPlayer & {id: string}));
+
+    const pairings: [TournamentPlayer & {id: string}, TournamentPlayer & {id: string}][] = [];
+    const pairedIds = new Set<string>();
+
+    for (const player of availablePlayers) {
+        if (pairedIds.has(player.id)) continue;
+
+        // Find best match (not played against, close score)
+        let bestMatch: (TournamentPlayer & {id: string}) | null = null;
+        for (const opponent of availablePlayers) {
+            if (player.id === opponent.id || pairedIds.has(opponent.id)) continue;
+            if (player.hasPlayedAgainst?.includes(opponent.id)) continue;
+            
+            bestMatch = opponent; // Simple pairing: first available opponent
+            break;
+        }
+
+        if (bestMatch) {
+            pairings.push([player, bestMatch]);
+            pairedIds.add(player.id);
+            pairedIds.add(bestMatch.id);
+        }
+    }
+
+    // Handle bye for odd player out (lowest score)
+    if (pairedIds.size < availablePlayers.length) {
+        const unpairedPlayer = availablePlayers.find(p => !pairedIds.has(p.id));
+        if (unpairedPlayer) {
+            console.log(`Player ${unpairedPlayer.username} gets a bye.`);
+            await playersRef.doc(unpairedPlayer.id).update({
+                score: admin.firestore.FieldValue.increment(1), // 1 point for a bye
+                gamesPlayed: admin.firestore.FieldValue.increment(1)
+            });
+        }
+    }
+
+    if (pairings.length === 0) {
+        console.log(`No valid pairings found for tournament ${tournamentId}.`);
+        return;
+    }
+
+    const tournamentDoc = await firestore.collection('tournaments').doc(tournamentId).get();
+    const tournamentData = tournamentDoc.data() as Tournament;
+
+    const batch = firestore.batch();
+
+    for (const [player1, player2] of pairings) {
+        const gameRef = firestore.collection('games').doc();
+        
+        const colors = Math.random() < 0.5 ? ['w', 'b'] : ['b', 'w'];
+        const whitePlayer = colors[0] === 'w' ? player1 : player2;
+        const blackPlayer = colors[0] === 'b' ? player1 : player2;
+
+        batch.set(gameRef, {
+            player1Id: player1.id,
+            player2Id: player2.id,
+            player1: { id: player1.id, username: player1.username, eloRating: player1.eloRating },
+            player2: { id: player2.id, username: player2.username, eloRating: player2.eloRating },
+            player1Color: player1.id === whitePlayer.id ? 'w' : 'b',
+            player2Color: player2.id === whitePlayer.id ? 'w' : 'b',
+            status: 'inprogress',
+            turn: 'w',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            timeControl: tournamentData.timeControl,
+            isTournamentGame: true,
+            tournamentId: tournamentId,
+        });
+
+        const player1Ref = playersRef.doc(player1.id);
+        const player2Ref = playersRef.doc(player2.id);
+
+        batch.update(player1Ref, { activeGameId: gameRef.id, hasPlayedAgainst: admin.firestore.FieldValue.arrayUnion(player2.id) });
+        batch.update(player2Ref, { activeGameId: gameRef.id, hasPlayedAgainst: admin.firestore.FieldValue.arrayUnion(player1.id) });
+        console.log(`Paired ${player1.username} vs ${player2.username} in game ${gameRef.id}`);
+    }
+
+    await batch.commit();
+}
+
+
+async function finalizeTournamentResults(tournamentId: string) {
+    console.log(`Finalizing results for tournament ${tournamentId}`);
+    const playersSnapshot = await firestore.collection(`tournaments/${tournamentId}/players`)
+                                          .orderBy('score', 'desc')
+                                          .get();
+
+    const finalStandings = playersSnapshot.docs.map((doc, index) => {
+        const data = doc.data() as TournamentPlayer;
+        return {
+            rank: index + 1,
+            uid: doc.id,
+            username: data.username,
+            score: data.score,
+            gamesPlayed: data.gamesPlayed,
+            eloRating: data.eloRating,
+        };
+    });
+
+    await firestore.collection('tournaments').doc(tournamentId).update({
+        finalStandings: finalStandings,
+        status: 'completed'
+    });
+    console.log(`Tournament ${tournamentId} has been finalized.`);
+}
+
+
+// --- HTTP & DB TRIGGERS ---
+
 export const submitMove = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
-        throw new functions.https.HttpsError(
-            'unauthenticated',
-            'The function must be called while authenticated.'
-        );
+        throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
     }
 
     const { gameId, from, to, promotion } = data;
-
     if (!gameId || !from || !to) {
-        throw new functions.https.HttpsError(
-            'invalid-argument',
-            'The function must be called with "gameId", "from", and "to" arguments.'
-        );
+        throw new functions.https.HttpsError('invalid-argument', 'The function must be called with "gameId", "from", and "to" arguments.');
     }
 
     const gameRef = db.ref(`/liveGames/${gameId}`);
@@ -261,27 +386,17 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             const gameData = snapshot.val();
             const firestoreGameData = firestoreGameDoc.data();
 
-            if (!gameData || !firestoreGameData) {
-                throw new functions.https.HttpsError('not-found', 'Game not found.');
-            }
-             if (firestoreGameData.status === 'completed') {
-                throw new functions.https.HttpsError('failed-precondition', 'Game is already completed.');
-            }
+            if (!gameData || !firestoreGameData) { throw new functions.https.HttpsError('not-found', 'Game not found.'); }
+            if (firestoreGameData.status === 'completed') { throw new functions.https.HttpsError('failed-precondition', 'Game is already completed.');}
 
             const isBotGame = firestoreGameData.isBotGame === true;
-            
             const uid = context.auth?.uid;
             if (!uid) throw new functions.https.HttpsError("unauthenticated", "Not logged in");
 
-            const myColor = uid === firestoreGameData.player1Id
-                ? firestoreGameData.player1Color 
-                : firestoreGameData.player2Color;
-            
+            const myColor = uid === firestoreGameData.player1Id ? firestoreGameData.player1Color : firestoreGameData.player2Color;
             const game = new Chess(gameData.fen);
             
-            if (game.turn() !== myColor || firestoreGameData.turn !== myColor) {
-                 throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.');
-            }
+            if (game.turn() !== myColor || firestoreGameData.turn !== myColor) { throw new functions.https.HttpsError('failed-precondition', 'It is not your turn.'); }
             
             const firestoreUpdates: any = {};
             const liveGameUpdates: any = {};
@@ -310,34 +425,20 @@ export const submitMove = functions.https.onCall(async (data, context) => {
 
             const move: Move | null = game.move({ from, to, promotion });
 
-            if (move === null) {
-                throw new functions.https.HttpsError('invalid-argument', 'Illegal move.');
-            }
+            if (move === null) { throw new functions.https.HttpsError('invalid-argument', 'Illegal move.'); }
             
             let sound: 'move' | 'capture' | 'check' | 'castle' | 'promotion' = 'move';
-            if (game.inCheck()) {
-                sound = 'check';
-            } else if (move.flags.includes('c')) {
-                sound = 'capture';
-            } else if (move.flags.includes('k') || move.flags.includes('q')) {
-                sound = 'castle';
-            } else if (move.flags.includes('p')) {
-                sound = 'promotion';
-            }
+            if (game.inCheck()) { sound = 'check'; } 
+            else if (move.flags.includes('c')) { sound = 'capture'; } 
+            else if (move.flags.includes('k') || move.flags.includes('q')) { sound = 'castle'; } 
+            else if (move.flags.includes('p')) { sound = 'promotion'; }
 
             const newFen = game.fen();
             const newTurn = game.turn();
 
             liveGameUpdates.fen = newFen;
             liveGameUpdates.turn = newTurn;
-            liveGameUpdates.lastMove = {
-                from: move.from,
-                to: move.to,
-                piece: move.piece,
-                color: move.color,
-                captured: move.flags.includes('c'),
-                sound: sound,
-            };
+            liveGameUpdates.lastMove = { from: move.from, to: move.to, piece: move.piece, color: move.color, captured: move.flags.includes('c'), sound: sound };
             
             if(gameData.clocks && firestoreGameData.timeControl) {
                 liveGameUpdates['clocks/lastTick'] = admin.database.ServerValue.TIMESTAMP;
@@ -349,15 +450,9 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             if (game.isGameOver()) {
                 let reason = 'Game Over';
                 let winnerId: 'w' | 'b' | 'd' = newTurn === 'w' ? 'b' : 'w';
-                if(game.isCheckmate()) {
-                    reason = 'Checkmate';
-                } else if (game.isStalemate()) {
-                    reason = 'Stalemate';
-                    winnerId = 'd';
-                } else if (game.isDraw()) {
-                    reason = 'Draw';
-                    winnerId = 'd';
-                }
+                if(game.isCheckmate()) { reason = 'Checkmate'; } 
+                else if (game.isStalemate()) { reason = 'Stalemate'; winnerId = 'd'; } 
+                else if (game.isDraw()) { reason = 'Draw'; winnerId = 'd'; }
                 
                 firestoreUpdates.status = 'completed';
                 firestoreUpdates.winnerId = winnerId;
@@ -369,14 +464,9 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             }
             
             transaction.update(firestoreGameRef, firestoreUpdates);
-            
-            // This is outside the transaction but it's for the live game state, which is okay.
-            // Using a transaction for RTDB is more complex and not required here.
             await gameRef.update(liveGameUpdates);
 
             if (!game.isGameOver() && isBotGame && newTurn !== myColor) {
-                // It's the bot's turn now.
-                // Use a timeout to make the bot's move feel more natural
                 setTimeout(() => {
                     firestoreGameRef.get().then(doc => {
                         if (doc.exists) {
@@ -391,78 +481,74 @@ export const submitMove = functions.https.onCall(async (data, context) => {
         });
 
     } catch (error: any) {
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
+        if (error instanceof functions.https.HttpsError) { throw error; }
         console.error('Error processing move:', error);
         throw new functions.https.HttpsError('internal', 'An internal error occurred while processing the move.');
     }
 });
 
 
-export const initializeLiveGame = functions.firestore
+export const onGameWrite = functions.firestore
     .document('/games/{gameId}')
     .onWrite(async (change, context) => {
         const gameId = context.params.gameId;
         const afterData = change.after.data();
         const beforeData = change.before.data();
 
-        console.log(`initializeLiveGame fired for game: ${gameId}`);
-
-        if (!afterData || afterData.status !== 'inprogress') {
-            // Clean up RTDB if game is deleted or completed from a non-inprogress state
-             if (!afterData) {
-                await db.ref(`liveGames/${gameId}`).remove();
-                console.log(`Live game removed for deleted game ${gameId}`);
+        // --- Game Initialization ---
+        if (afterData && afterData.status === 'inprogress' && beforeData?.status !== 'inprogress') {
+            const liveGameRef = db.ref(`liveGames/${gameId}`);
+            const snapshot = await liveGameRef.once('value');
+            if (!snapshot.exists()) {
+                const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+                const liveGameState: any = { fen: startingFen, turn: 'w' };
+                const timeControl = afterData.timeControl || { initial: 300000, increment: 0 };
+                
+                if (typeof timeControl.initial === 'number') {
+                    const initialSeconds = Math.floor(timeControl.initial / 1000);
+                    const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
+                    liveGameState.clocks = {
+                        white: initialSeconds, black: initialSeconds, running: 'w',
+                        lastTick: admin.database.ServerValue.TIMESTAMP, increment: incrementSeconds
+                    };
+                }
+                await liveGameRef.set(liveGameState);
+                console.log(`Live game created for game ${gameId}`);
             }
-            return null;
-        }
-        
-        if (beforeData?.status === 'inprogress') {
-            console.log(`Game ${gameId} is already in progress. Skipping initialization.`);
-            return null;
         }
 
-        const liveGameRef = db.ref(`liveGames/${gameId}`);
-        const snapshot = await liveGameRef.once('value');
-        const existing = snapshot.val();
-        
-        if (existing) { // If there's any data, assume it's initialized
-            console.log(`Game ${gameId} already has data in Realtime DB. Skipping.`);
-            return null;
+        // --- Game Deletion/Cleanup ---
+        if (!afterData) {
+            await db.ref(`liveGames/${gameId}`).remove();
+            console.log(`Live game removed for deleted game ${gameId}`);
         }
         
-        const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-        
-        const liveGameState: any = {
-            fen: startingFen,
-            turn: 'w'
-        };
+        // --- Tournament Game Completion ---
+        if (beforeData?.status === 'inprogress' && afterData?.status === 'completed' && afterData.isTournamentGame) {
+            console.log(`Tournament game ${gameId} completed.`);
+            const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
 
-        const timeControl = afterData.timeControl || { initial: 300000, increment: 0 };
-        console.log(`timeControl for game ${gameId}:`, timeControl);
+            if (!tournamentId) return;
 
-        if (typeof timeControl.initial === 'number') {
-            const initialSeconds = Math.floor(timeControl.initial / 1000);
-            const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
+            const player1Won = (player1Color === 'w' && winnerId === 'w') || (player1Color === 'b' && winnerId === 'b');
+            const player2Won = (player1Color === 'w' && winnerId === 'b') || (player1Color === 'b' && winnerId === 'w');
 
-            liveGameState.clocks = {
-                white: initialSeconds,
-                black: initialSeconds,
-                running: 'w',
-                lastTick: admin.database.ServerValue.TIMESTAMP,
-                increment: incrementSeconds
-            };
+            let p1score = 0, p2score = 0;
+            if (winnerId === 'd') { p1score = 0.5; p2score = 0.5; }
+            else if (player1Won) { p1score = 1; }
+            else if (player2Won) { p2score = 1; }
 
-            console.log(
-              `Clocks initialized for game ${gameId}: ${initialSeconds}s + ${incrementSeconds}s`
-            );
+            const p1Ref = firestore.doc(`tournaments/${tournamentId}/players/${player1Id}`);
+            const p2Ref = firestore.doc(`tournaments/${tournamentId}/players/${player2Id}`);
+            
+            await firestore.batch()
+                .update(p1Ref, { score: admin.firestore.FieldValue.increment(p1score), gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null })
+                .update(p2Ref, { score: admin.firestore.FieldValue.increment(p2score), gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null })
+                .commit();
+            
+            console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
+            await pairAndCreateMatches(tournamentId);
         }
-
-        console.log(`Initializing live game at /liveGames/${gameId}`);
-        await liveGameRef.set(liveGameState); // Use set instead of update for initialization
-        console.log(`Live game created for game ${gameId}`);
-        return null;
     });
 
 export const handleGameAction = functions.https.onCall(async (data, context) => {
@@ -482,26 +568,15 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
     try {
         return await firestore.runTransaction(async (transaction) => {
             const gameDoc = await transaction.get(gameRef);
-            if (!gameDoc.exists) {
-                throw new functions.https.HttpsError('not-found', 'Game not found.');
-            }
+            if (!gameDoc.exists) { throw new functions.https.HttpsError('not-found', 'Game not found.'); }
 
             const gameData = gameDoc.data()!;
-            
-            if (gameData.status === 'completed') {
-                throw new functions.https.HttpsError('failed-precondition', 'Game is already completed.');
-            }
-
-            if (gameData.isBotGame && ['draw', 'decline-draw', 'abort'].includes(action)) {
-                 throw new functions.https.HttpsError('failed-precondition', 'This action is not allowed in bot games.');
-            }
+            if (gameData.status === 'completed') { throw new functions.https.HttpsError('failed-precondition', 'Game is already completed.'); }
+            if (gameData.isBotGame && ['draw', 'decline-draw', 'abort'].includes(action)) { throw new functions.https.HttpsError('failed-precondition', 'This action is not allowed in bot games.'); }
             
             const isPlayer1 = uid === gameData.player1Id;
             const isPlayer2 = uid === gameData.player2Id;
-            
-            if(!isPlayer1 && !isPlayer2) {
-                 throw new functions.https.HttpsError('permission-denied', 'You are not a player in this game.');
-            }
+            if(!isPlayer1 && !isPlayer2) { throw new functions.https.HttpsError('permission-denied', 'You are not a player in this game.'); }
 
             const opponentId = isPlayer1 ? gameData.player2Id : gameData.player1Id;
             const myColor = isPlayer1 ? gameData.player1Color : gameData.player2Color;
@@ -527,15 +602,10 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                          firestoreUpdates.reason = 'draw';
                          firestoreUpdates.drawOffer = null;
                          firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
-                         firestoreUpdates.lastDrawAction = {
-                            type: 'accepted',
-                            by: uid,
-                            at: admin.firestore.FieldValue.serverTimestamp()
-                        };
+                         firestoreUpdates.lastDrawAction = { type: 'accepted', by: uid, at: admin.firestore.FieldValue.serverTimestamp() };
                         await calculateAndApplyElo(transaction, gameRef, gameData, 'd');
                         transaction.update(gameRef, firestoreUpdates);
                         return { status: 'success' };
-
                     } else if (currentDrawOffer === uid) {
                         throw new functions.https.HttpsError('failed-precondition', 'You have already offered a draw.');
                     } else { // Offer draw
@@ -545,41 +615,27 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
                 
                 case 'decline-draw':
                     if (gameData.drawOffer === opponentId) {
-                        transaction.update(gameRef, {
-                            drawOffer: null,
-                            lastDrawAction: {
-                                type: 'declined',
-                                by: uid,
-                                at: admin.firestore.FieldValue.serverTimestamp()
-                            }
-                        });
+                        transaction.update(gameRef, { drawOffer: null, lastDrawAction: { type: 'declined', by: uid, at: admin.firestore.FieldValue.serverTimestamp() } });
                         return { status: 'success' };
                     } else {
                         throw new functions.https.HttpsError('failed-precondition', 'No draw offer to decline.');
                     }
 
                 case 'abort':
-                    // Can only abort if game has not started
-                    if (gameData.status === 'inprogress') {
-                         throw new functions.https.HttpsError('failed-precondition', 'Cannot abort a game that is in progress.');
-                    }
+                    if (gameData.status === 'inprogress') { throw new functions.https.HttpsError('failed-precondition', 'Cannot abort a game that is in progress.'); }
                     firestoreUpdates.status = 'completed';
-                    firestoreUpdates.winnerId = 'd'; // No winner
+                    firestoreUpdates.winnerId = 'd';
                     firestoreUpdates.reason = 'abort';
                     firestoreUpdates.completedAt = admin.firestore.FieldValue.serverTimestamp();
-                    // Do not apply ELO for aborted games
                     transaction.update(gameRef, firestoreUpdates);
                     return { status: 'success' };
-
 
                 default:
                     throw new functions.https.HttpsError('invalid-argument', 'Invalid action.');
             }
         });
     } catch (error: any) {
-        if (error instanceof functions.https.HttpsError) {
-            throw error;
-        }
+        if (error instanceof functions.https.HttpsError) { throw error; }
         console.error('Error handling game action:', error);
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
@@ -593,7 +649,6 @@ export const handlePlayerDisconnect = functions.database
     const beforeData = change.before.val();
     const afterData = change.after.val();
 
-    // Player goes offline while in a game
     if (beforeData?.state === 'ingame' && afterData?.state === 'offline') {
       const gameId = beforeData.gameId;
       if (!gameId) return null;
@@ -603,35 +658,21 @@ export const handlePlayerDisconnect = functions.database
         return null;
       }
       
-      console.log(`Player ${uid} disconnected from game ${gameId}. Starting 30s grace period.`);
-
-      // Set deadline in RTDB for the UI
-      const deadline = Date.now() + 30000;
-      await db.ref(`/abandonmentDeadlines/${gameId}`).set(deadline);
-
-      // Grace period
-      await new Promise(resolve => setTimeout(resolve, 30000));
+      const gracePeriod = 30000;
+      await new Promise(resolve => setTimeout(resolve, gracePeriod));
       
       const currentPresenceSnap = await admin.database().ref(`/presence/${uid}`).once('value');
-      const isStillOffline = currentPresenceSnap.val()?.state === 'offline';
-
-      if (!isStillOffline) {
-        console.log(`Player ${uid} reconnected within grace period for game ${gameId}.`);
-        await db.ref(`/abandonmentDeadlines/${gameId}`).remove();
-        return null;
-      }
+      if (currentPresenceSnap.val()?.state !== 'offline') { return null; }
       
-      console.log(`Player ${uid} is still offline. Abandoning game ${gameId}.`);
+      console.log(`Player ${uid} abandoned game ${gameId}.`);
       const gameRef = firestore.collection('games').doc(gameId);
-
+      
       try {
-        // Use a transaction to safely update the game state.
         await firestore.runTransaction(async (transaction) => {
             const freshGameDoc = await transaction.get(gameRef);
             if (!freshGameDoc.exists) return;
             const gameData = freshGameDoc.data()!;
 
-            // Check again inside transaction to prevent race conditions
             if (gameData.status !== 'inprogress') return;
 
             const disconnectedPlayerIsP1 = uid === gameData.player1Id;
@@ -640,7 +681,7 @@ export const handlePlayerDisconnect = functions.database
             if (!winnerColor) return;
             
             const updates = {
-                status: 'completed',
+                status: 'completed' as const,
                 winnerId: winnerColor,
                 reason: 'abandoned' as const,
                 completedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -648,6 +689,22 @@ export const handlePlayerDisconnect = functions.database
             
             await calculateAndApplyElo(transaction, gameRef, gameData, winnerColor);
             transaction.update(gameRef, updates);
+
+            // Handle tournament game abandonment
+            if(gameData.isTournamentGame && gameData.tournamentId) {
+                const tournamentId = gameData.tournamentId;
+                const winnerPlayerId = opponentId;
+                const loserPlayerId = uid;
+
+                const winnerRef = firestore.doc(`tournaments/${tournamentId}/players/${winnerPlayerId}`);
+                const loserRef = firestore.doc(`tournaments/${tournamentId}/players/${loserPlayerId}`);
+
+                transaction.update(winnerRef, { score: admin.firestore.FieldValue.increment(1), gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null });
+                transaction.update(loserRef, { gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null });
+
+                console.log(`Tournament scores updated for abandoned game ${gameId}. Triggering re-pairing.`);
+                // The onWrite trigger for the game will handle re-pairing after this transaction.
+            }
 
             if (opponentId) {
                 const opponentPresenceRef = admin.database().ref(`/presence/${opponentId}`);
@@ -660,16 +717,66 @@ export const handlePlayerDisconnect = functions.database
         });
       } catch (error) {
         console.error(`Failed to process abandonment for game ${gameId}:`, error);
-      } finally {
-        await db.ref(`/abandonmentDeadlines/${gameId}`).remove(); // Always clean up
       }
     }
-    // Player comes back online or gracefully leaves a game
-    else if (beforeData?.state === 'ingame' && afterData?.state !== 'offline') {
-        const gameId = beforeData.gameId;
-        if (gameId) {
-            await db.ref(`/abandonmentDeadlines/${gameId}`).remove();
-        }
-    }
-    return null;
   });
+
+
+// --- SCHEDULED FUNCTIONS ---
+
+export const startTournaments = functions.pubsub.schedule('every 1 minutes').onRun(async (context) => {
+    const now = admin.firestore.Timestamp.now();
+    const query = firestore.collection('tournaments')
+        .where('status', '==', 'scheduled')
+        .where('startsAt', '<=', now);
+    
+    const snapshot = await query.get();
+    if (snapshot.empty) return null;
+
+    const batch = firestore.batch();
+    snapshot.docs.forEach(doc => {
+        console.log(`Starting tournament ${doc.id}`);
+        batch.update(doc.ref, { status: 'running' });
+    });
+
+    return batch.commit();
+});
+
+export const endTournaments = functions.pubsub.schedule('every 1 minutes').onRun(async (context) => {
+    const now = admin.firestore.Timestamp.now();
+    const query = firestore.collection('tournaments')
+        .where('status', '==', 'running')
+        .where('endsAt', '<=', now);
+
+    const snapshot = await query.get();
+    if (snapshot.empty) return null;
+
+    const batch = firestore.batch();
+    snapshot.docs.forEach(doc => {
+        console.log(`Ending tournament ${doc.id}`);
+        batch.update(doc.ref, { status: 'completed' });
+    });
+    
+    return batch.commit();
+});
+
+// --- TOURNAMENT STATE CHANGE TRIGGER ---
+export const onTournamentStatusChange = functions.firestore
+    .document('/tournaments/{tournamentId}')
+    .onUpdate(async (change, context) => {
+        const tournamentId = context.params.tournamentId;
+        const beforeData = change.before.data() as Tournament;
+        const afterData = change.after.data() as Tournament;
+
+        // Tournament starts -> pair players
+        if (beforeData.status === 'scheduled' && afterData.status === 'running') {
+            console.log(`Tournament ${tournamentId} has started. Initiating first round of pairings.`);
+            await pairAndCreateMatches(tournamentId);
+        }
+
+        // Tournament ends -> finalize results
+        if (beforeData.status === 'running' && afterData.status === 'completed') {
+            console.log(`Tournament ${tournamentId} has ended. Finalizing results.`);
+            await finalizeTournamentResults(tournamentId);
+        }
+    });

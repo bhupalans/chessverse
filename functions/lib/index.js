@@ -537,7 +537,7 @@ exports.handlePlayerDisconnect = functions.database
         if (!gameId)
             return null;
         const gameDoc = await firestore.collection('games').doc(gameId).get();
-        if (!gameDoc.exists() || ((_a = gameDoc.data()) === null || _a === void 0 ? void 0 : _a.status) !== 'inprogress' || ((_b = gameDoc.data()) === null || _b === void 0 ? void 0 : _b.isBotGame)) {
+        if (!gameDoc.exists || ((_a = gameDoc.data()) === null || _a === void 0 ? void 0 : _a.status) !== 'inprogress' || ((_b = gameDoc.data()) === null || _b === void 0 ? void 0 : _b.isBotGame)) {
             return null;
         }
         console.log(`Player ${uid} disconnected from game ${gameId}. Starting 30s grace period.`);
