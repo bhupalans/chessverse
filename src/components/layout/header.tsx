@@ -11,14 +11,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Crown, History, LogIn, LogOut, User, Trophy, BarChart3 } from 'lucide-react';
+import { Crown, History, LogIn, LogOut, User, Trophy, BarChart3, ShieldCheck } from 'lucide-react';
 import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useAdmin } from '@/hooks/use-admin';
 
 export function Header() {
   const { user, isUserLoading } = useUser();
+  const { isAdmin } = useAdmin();
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
@@ -122,6 +124,15 @@ export function Header() {
                   <span>Game History</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                {isAdmin && (
+                  <>
+                    <DropdownMenuItem onClick={() => router.push('/admin/tournaments')}>
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      <span>Admin Dashboard</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>

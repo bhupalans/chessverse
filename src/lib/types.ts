@@ -1,4 +1,4 @@
-
+import type { Timestamp } from 'firebase/firestore';
 
 export type Player = {
   id: string;
@@ -13,11 +13,12 @@ export type User = {
   email: string;
   avatarUrl?: string;
   eloRating: number;
-  onlineStatus: 'online' | 'offline';
+  onlineStatus: 'online' | 'offline' | 'ingame';
   gamesPlayed: number;
   wins: number;
   losses: number;
   draws: number;
+  lastSeen?: Timestamp;
 };
 
 export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';
@@ -60,10 +61,10 @@ export type Game = {
   winnerId?: 'w' | 'b' | 'd'; // d for draw
   drawOffer?: string | null; // user.uid
   lastDrawAction?: LastDrawAction;
-  reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate' | 'timeout' | 'abort';
+  reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate' | 'timeout' | 'abort' | 'abandoned';
   timeControl: TimeControl;
-  createdAt: any; // Firestore Timestamp
-  completedAt?: any; // Firestore Timestamp
+  createdAt: Timestamp;
+  completedAt?: Timestamp;
   whiteEloBefore?: number;
   blackEloBefore?: number;
   whiteEloAfter?: number;
@@ -93,6 +94,7 @@ export type LiveGame = {
     turn: 'w' | 'b';
     lastMove?: LastMove;
     clocks?: LiveClock;
+    abandonmentDeadline?: number;
 }
 
 export type TournamentState =
@@ -107,14 +109,14 @@ export type Tournament = {
   id: string;
   name: string;
   timeControl: TimeControl;
-  entryFee: number;
+  entryFee?: number;
   state: TournamentState;
-  startTime: any; // Firestore Timestamp
+  startTime: Timestamp;
   durationMinutes: number;
   maxPlayers: number;
   playerCount: number;
-  liveSince?: any; // Firestore Timestamp
-  createdAt: any; // Firestore Timestamp
+  liveSince?: Timestamp;
+  createdAt: Timestamp;
   finalStandings?: any[];
 };
 
@@ -126,10 +128,6 @@ export type TournamentPlayer = {
   score: number;
   gamesPlayed: number;
   activeGameId: string | null;
-  joinedAt: any; // Firestore Timestamp
+  joinedAt: Timestamp;
   hasPlayedAgainst?: string[];
 };
-
-    
-
-    
