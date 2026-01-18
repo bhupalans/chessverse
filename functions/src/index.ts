@@ -1014,10 +1014,12 @@ export const autoTransitionTournaments = functions.pubsub.schedule('every 1 minu
     const liveSnapshot = await liveQuery.get();
     liveSnapshot.docs.forEach(doc => {
         const t = doc.data() as Tournament;
-        const endTime = t.liveSince!.toMillis() + (t.durationMinutes * 60 * 1000);
-        if (now.toMillis() >= endTime) {
-            console.log(`Completing tournament ${doc.id} as its duration has ended.`);
-            batch.update(doc.ref, { state: 'completed' });
+        if (t.liveSince) {
+            const endTime = t.liveSince.toMillis() + (t.durationMinutes * 60 * 1000);
+            if (now.toMillis() >= endTime) {
+                console.log(`Completing tournament ${doc.id} as its duration has ended.`);
+                batch.update(doc.ref, { state: 'completed' });
+            }
         }
     });
     
@@ -1042,13 +1044,7 @@ export const onTournamentStateChange = functions.firestore
         const before = change.before.data() as Tournament;
         const after = change.after.data() as Tournament;
 
-        // locked -> live
-        if (before.state === 'locked' && after.state === 'live') {
-            console.log(`Tournament ${tournamentId} is now live. Initiating pairings.`);
-            await pairAndCreateMatches(tournamentId);
-        }
-        
-        // published -> locked (can also be triggered manually)
+        // published -> locked -> live (immediate transition)
         if (before.state === 'published' && after.state === 'locked') {
              // Immediately transition to live after locking
             console.log(`Tournament ${tournamentId} is locked. Transitioning to live.`);
@@ -1058,13 +1054,15 @@ export const onTournamentStateChange = functions.firestore
             });
         }
         
-        // live -> completed
+        // locked -> live (Tournament actually starts here)
+        if (before.state === 'locked' && after.state === 'live') {
+            console.log(`Tournament ${tournamentId} is now live. Initiating pairings.`);
+            await pairAndCreateMatches(tournamentId);
+        }
+        
+        // live -> completed (Finalize results)
         if (before.state === 'live' && after.state === 'completed') {
             console.log(`Tournament ${tournamentId} has completed. Finalizing results.`);
             await finalizeTournamentResults(tournamentId);
         }
     });
-
-
-
-    
