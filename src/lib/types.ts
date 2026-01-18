@@ -112,12 +112,14 @@ export type Tournament = {
   startTime: any; // Firestore Timestamp
   durationMinutes: number;
   maxPlayers: number;
+  playerCount: number;
   liveSince?: any; // Firestore Timestamp
   createdAt: any; // Firestore Timestamp
   finalStandings?: any[];
 };
 
 export type TournamentPlayer = {
+  id: string;
   uid: string;
   username: string;
   eloRating: number;
@@ -126,3 +128,5 @@ export type TournamentPlayer = {
   activeGameId: string | null;
   joinedAt: any; // Firestore Timestamp
 };
+
+    

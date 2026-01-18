@@ -20,6 +20,7 @@ interface Tournament {
     startTime: admin.firestore.Timestamp;
     durationMinutes: number;
     maxPlayers: number;
+    playerCount: number;
     liveSince?: admin.firestore.Timestamp;
     createdAt: admin.firestore.Timestamp;
 }
@@ -825,6 +826,7 @@ export const createTournament = functions.https.onCall(async (data, context) => 
         startTime: admin.firestore.Timestamp.fromMillis(startTime),
         durationMinutes,
         maxPlayers,
+        playerCount: 0,
         entryFee: 0, // Defaulting to 0 as per prompt
         state: 'draft',
         createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -879,6 +881,116 @@ export const archiveTournament = functions.https.onCall(async (data, context) =>
     
     await tournamentRef.update({ state: 'archived' });
     return { success: true };
+});
+
+export const joinTournament = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'You must be logged in to join a tournament.');
+    }
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+    const { uid } = context.auth;
+
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    const playerRef = tournamentRef.collection('players').doc(uid);
+    const userRef = firestore.collection('users').doc(uid);
+
+    try {
+        await firestore.runTransaction(async (transaction) => {
+            const [tournamentDoc, playerDoc, userDoc] = await Promise.all([
+                transaction.get(tournamentRef),
+                transaction.get(playerRef),
+                transaction.get(userRef)
+            ]);
+
+            if (!tournamentDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+            }
+            if (!userDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'User profile not found. Cannot join tournament.');
+            }
+
+            const tournament = tournamentDoc.data() as Tournament;
+
+            if (tournament.state !== 'published') {
+                throw new functions.https.HttpsError('failed-precondition', `Tournament is not open for registration. Current state: ${tournament.state}.`);
+            }
+            if (playerDoc.exists) {
+                throw new functions.https.HttpsError('already-exists', 'You have already joined this tournament.');
+            }
+            if (tournament.playerCount >= tournament.maxPlayers) {
+                throw new functions.https.HttpsError('failed-precondition', 'Tournament is full.');
+            }
+
+            const userProfile = userDoc.data()!;
+
+            transaction.set(playerRef, {
+                uid: uid,
+                username: userProfile.username || 'Anonymous',
+                eloRating: userProfile.eloRating || 1200,
+                score: 0,
+                gamesPlayed: 0,
+                activeGameId: null,
+                joinedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            transaction.update(tournamentRef, {
+                playerCount: admin.firestore.FieldValue.increment(1)
+            });
+        });
+        return { success: true, message: 'Successfully joined tournament.' };
+    } catch (error: any) {
+        if (error instanceof functions.https.HttpsError) { throw error; }
+        console.error('Error joining tournament:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred while joining the tournament.');
+    }
+});
+
+export const leaveTournament = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'You must be logged in to leave a tournament.');
+    }
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+    const { uid } = context.auth;
+
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    const playerRef = tournamentRef.collection('players').doc(uid);
+
+    try {
+        await firestore.runTransaction(async (transaction) => {
+            const [tournamentDoc, playerDoc] = await Promise.all([
+                transaction.get(tournamentRef),
+                transaction.get(playerRef)
+            ]);
+
+            if (!tournamentDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+            }
+            if (!playerDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'You are not registered for this tournament.');
+            }
+
+            const tournament = tournamentDoc.data() as Tournament;
+            if (tournament.state !== 'published') {
+                throw new functions.https.HttpsError('failed-precondition', `Cannot leave a tournament that is not open for registration. Current state: ${tournament.state}.`);
+            }
+
+            transaction.delete(playerRef);
+            transaction.update(tournamentRef, {
+                playerCount: admin.firestore.FieldValue.increment(-1)
+            });
+        });
+        return { success: true, message: 'Successfully left tournament.' };
+    } catch (error: any) {
+        if (error instanceof functions.https.HttpsError) { throw error; }
+        console.error('Error leaving tournament:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred while leaving the tournament.');
+    }
 });
 
 // --- AUTOMATIC TOURNAMENT STATE TRANSITIONS ---
@@ -953,3 +1065,6 @@ export const onTournamentStateChange = functions.firestore
         }
     });
 
+
+
+    

@@ -191,6 +191,10 @@
           "type": "number",
           "description": "Maximum number of players that can join."
         },
+        "playerCount": {
+          "type": "number",
+          "description": "Current number of players registered."
+        },
         "state": {
           "type": "string",
           "enum": [
@@ -228,6 +232,7 @@
         "startTime",
         "durationMinutes",
         "maxPlayers",
+        "playerCount",
         "state",
         "createdAt"
       ]

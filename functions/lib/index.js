@@ -33,13 +33,28 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onTournamentStatusChange = exports.endTournaments = exports.startTournaments = exports.handlePlayerDisconnect = exports.handleGameAction = exports.onGameWrite = exports.submitMove = void 0;
+exports.onTournamentStateChange = exports.autoTransitionTournaments = exports.archiveTournament = exports.lockTournamentEarly = exports.publishTournament = exports.createTournament = exports.handlePlayerDisconnect = exports.handleGameAction = exports.onGameWrite = exports.submitMove = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const chess_js_1 = require("chess.js");
 admin.initializeApp();
 const db = admin.database();
 const firestore = admin.firestore();
+// --- TOURNAMENT STATE MACHINE ---
+const VALID_TRANSITIONS = new Map([
+    ['draft', ['published']],
+    ['published', ['locked']],
+    ['locked', ['live']],
+    ['live', ['completed']],
+    ['completed', ['archived']],
+    ['archived', []]
+]);
+function validateTournamentStateTransition(currentState, requestedState) {
+    const allowedStates = VALID_TRANSITIONS.get(currentState);
+    if (!allowedStates || !allowedStates.includes(requestedState)) {
+        throw new functions.https.HttpsError('failed-precondition', `Invalid state transition from ${currentState} to ${requestedState}.`);
+    }
+}
 // --- ELO Calculation ---
 async function calculateAndApplyElo(transaction, gameRef, gameData, winnerId) {
     if (gameData.isBotGame || gameData.reason === 'abort') {
@@ -223,6 +238,13 @@ function getBotMove(game, difficulty) {
 async function pairAndCreateMatches(tournamentId) {
     var _a;
     console.log(`Starting pairing for tournament: ${tournamentId}`);
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    const tournamentDoc = await tournamentRef.get();
+    const tournamentData = tournamentDoc.data();
+    if (tournamentData.state !== 'live') {
+        console.log(`Tournament ${tournamentId} is not in 'live' state. Halting pairing.`);
+        return;
+    }
     const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
     const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('score', 'desc').get();
     if (playersSnapshot.empty) {
@@ -235,7 +257,6 @@ async function pairAndCreateMatches(tournamentId) {
     for (const player of availablePlayers) {
         if (pairedIds.has(player.id))
             continue;
-        // Find best match (not played against, close score)
         let bestMatch = null;
         for (const opponent of availablePlayers) {
             if (player.id === opponent.id || pairedIds.has(opponent.id))
@@ -251,13 +272,12 @@ async function pairAndCreateMatches(tournamentId) {
             pairedIds.add(bestMatch.id);
         }
     }
-    // Handle bye for odd player out (lowest score)
     if (pairedIds.size < availablePlayers.length) {
         const unpairedPlayer = availablePlayers.find(p => !pairedIds.has(p.id));
         if (unpairedPlayer) {
             console.log(`Player ${unpairedPlayer.username} gets a bye.`);
             await playersRef.doc(unpairedPlayer.id).update({
-                score: admin.firestore.FieldValue.increment(1), // 1 point for a bye
+                score: admin.firestore.FieldValue.increment(1),
                 gamesPlayed: admin.firestore.FieldValue.increment(1)
             });
         }
@@ -266,14 +286,11 @@ async function pairAndCreateMatches(tournamentId) {
         console.log(`No valid pairings found for tournament ${tournamentId}.`);
         return;
     }
-    const tournamentDoc = await firestore.collection('tournaments').doc(tournamentId).get();
-    const tournamentData = tournamentDoc.data();
     const batch = firestore.batch();
     for (const [player1, player2] of pairings) {
         const gameRef = firestore.collection('games').doc();
         const colors = Math.random() < 0.5 ? ['w', 'b'] : ['b', 'w'];
         const whitePlayer = colors[0] === 'w' ? player1 : player2;
-        //const blackPlayer = colors[0] === 'b' ? player1 : player2;
         batch.set(gameRef, {
             player1Id: player1.id,
             player2Id: player2.id,
@@ -314,7 +331,6 @@ async function finalizeTournamentResults(tournamentId) {
     });
     await firestore.collection('tournaments').doc(tournamentId).update({
         finalStandings: finalStandings,
-        status: 'completed'
     });
     console.log(`Tournament ${tournamentId} has been finalized.`);
 }
@@ -447,70 +463,6 @@ exports.submitMove = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('internal', 'An internal error occurred while processing the move.');
     }
 });
-/*
-export const onGameWrite = functions.firestore
-    .document('/games/{gameId}')
-    .onWrite(async (change, context) => {
-        const gameId = context.params.gameId;
-        const afterData = change.after.data();
-        const beforeData = change.before.data();
-
-        // --- Game Initialization ---
-        if (afterData && afterData.status === 'inprogress' && beforeData?.status !== 'inprogress') {
-            const liveGameRef = db.ref(`liveGames/${gameId}`);
-            const snapshot = await liveGameRef.once('value');
-            if (!snapshot.exists()) {
-                const startingFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-                const liveGameState: any = { fen: startingFen, turn: 'w' };
-                const timeControl = afterData.timeControl || { initial: 300000, increment: 0 };
-                
-                if (typeof timeControl.initial === 'number') {
-                    const initialSeconds = Math.floor(timeControl.initial / 1000);
-                    const incrementSeconds = Math.floor((timeControl.increment || 0) / 1000);
-                    liveGameState.clocks = {
-                        white: initialSeconds, black: initialSeconds, running: 'w',
-                        lastTick: admin.database.ServerValue.TIMESTAMP, increment: incrementSeconds
-                    };
-                }
-                await liveGameRef.set(liveGameState);
-                console.log(`Live game created for game ${gameId}`);
-            }
-        }
-
-        // --- Game Deletion/Cleanup ---
-        if (!afterData) {
-            await db.ref(`liveGames/${gameId}`).remove();
-            console.log(`Live game removed for deleted game ${gameId}`);
-        }
-        
-        // --- Tournament Game Completion ---
-        if (beforeData?.status === 'inprogress' && afterData?.status === 'completed' && afterData.isTournamentGame) {
-            console.log(`Tournament game ${gameId} completed.`);
-            const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
-
-            if (!tournamentId) return;
-
-            const player1Won = (player1Color === 'w' && winnerId === 'w') || (player1Color === 'b' && winnerId === 'b');
-            const player2Won = (player1Color === 'w' && winnerId === 'b') || (player1Color === 'b' && winnerId === 'w');
-
-            let p1score = 0, p2score = 0;
-            if (winnerId === 'd') { p1score = 0.5; p2score = 0.5; }
-            else if (player1Won) { p1score = 1; }
-            else if (player2Won) { p2score = 1; }
-
-            const p1Ref = firestore.doc(`tournaments/${tournamentId}/players/${player1Id}`);
-            const p2Ref = firestore.doc(`tournaments/${tournamentId}/players/${player2Id}`);
-            
-            await firestore.batch()
-                .update(p1Ref, { score: admin.firestore.FieldValue.increment(p1score), gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null })
-                .update(p2Ref, { score: admin.firestore.FieldValue.increment(p2score), gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null })
-                .commit();
-            
-            console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
-            await pairAndCreateMatches(tournamentId);
-        }
-    });
-*/
 exports.onGameWrite = functions.firestore
     .document('/games/{gameId}')
     .onWrite(async (change, context) => {
@@ -544,7 +496,7 @@ exports.onGameWrite = functions.firestore
     if (!afterData) {
         await db.ref(`liveGames/${gameId}`).remove();
         console.log(`Live game removed for deleted game ${gameId}`);
-        return null; // ⬅️ explicit return
+        return null;
     }
     // --- Tournament Game Completion ---
     if ((beforeData === null || beforeData === void 0 ? void 0 : beforeData.status) === 'inprogress' &&
@@ -554,6 +506,11 @@ exports.onGameWrite = functions.firestore
         const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
         if (!tournamentId)
             return null;
+        const tournamentDoc = await firestore.doc(`tournaments/${tournamentId}`).get();
+        if (!tournamentDoc.exists || tournamentDoc.data().state !== 'live') {
+            console.log(`Tournament ${tournamentId} is not live. No scores will be updated.`);
+            return null;
+        }
         const player1Won = (player1Color === 'w' && winnerId === 'w') ||
             (player1Color === 'b' && winnerId === 'b');
         const player2Won = (player1Color === 'w' && winnerId === 'b') ||
@@ -587,7 +544,7 @@ exports.onGameWrite = functions.firestore
         console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
         await pairAndCreateMatches(tournamentId);
     }
-    return null; // ⬅️ FINAL REQUIRED RETURN
+    return null;
 });
 exports.handleGameAction = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -681,87 +638,6 @@ exports.handleGameAction = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('internal', 'An internal error occurred.');
     }
 });
-/*
-export const handlePlayerDisconnect = functions.database
-  .ref('/presence/{uid}')
-  .onWrite(async (change, context) => {
-    const { uid } = context.params;
-    const beforeData = change.before.val();
-    const afterData = change.after.val();
-
-    if (beforeData?.state === 'ingame' && afterData?.state === 'offline') {
-      const gameId = beforeData.gameId;
-      if (!gameId) return null;
-
-      const gameDoc = await firestore.collection('games').doc(gameId).get();
-      if (!gameDoc.exists || gameDoc.data()?.status !== 'inprogress' || gameDoc.data()?.isBotGame) {
-        return null;
-      }
-      
-      const gracePeriod = 30000;
-      await new Promise(resolve => setTimeout(resolve, gracePeriod));
-      
-      const currentPresenceSnap = await admin.database().ref(`/presence/${uid}`).once('value');
-      if (currentPresenceSnap.val()?.state !== 'offline') { return null; }
-      
-      console.log(`Player ${uid} abandoned game ${gameId}.`);
-      const gameRef = firestore.collection('games').doc(gameId);
-      
-      try {
-        await firestore.runTransaction(async (transaction) => {
-            const freshGameDoc = await transaction.get(gameRef);
-            if (!freshGameDoc.exists) return;
-            const gameData = freshGameDoc.data()!;
-
-            if (gameData.status !== 'inprogress') return;
-
-            const disconnectedPlayerIsP1 = uid === gameData.player1Id;
-            const opponentId = disconnectedPlayerIsP1 ? gameData.player2Id : gameData.player1Id;
-            const winnerColor = disconnectedPlayerIsP1 ? gameData.player2Color : gameData.player1Color;
-            if (!winnerColor) return;
-            
-            const updates = {
-                status: 'completed' as const,
-                winnerId: winnerColor,
-                reason: 'abandoned' as const,
-                completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-            
-            await calculateAndApplyElo(transaction, gameRef, gameData, winnerColor);
-            transaction.update(gameRef, updates);
-
-            // Handle tournament game abandonment
-            if(gameData.isTournamentGame && gameData.tournamentId) {
-                const tournamentId = gameData.tournamentId;
-                const winnerPlayerId = opponentId;
-                const loserPlayerId = uid;
-
-                const winnerRef = firestore.doc(`tournaments/${tournamentId}/players/${winnerPlayerId}`);
-                const loserRef = firestore.doc(`tournaments/${tournamentId}/players/${loserPlayerId}`);
-
-                transaction.update(winnerRef, { score: admin.firestore.FieldValue.increment(1), gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null });
-                transaction.update(loserRef, { gamesPlayed: admin.firestore.FieldValue.increment(1), activeGameId: null });
-
-                console.log(`Tournament scores updated for abandoned game ${gameId}. Triggering re-pairing.`);
-                // The onWrite trigger for the game will handle re-pairing after this transaction.
-            }
-
-            if (opponentId) {
-                const opponentPresenceRef = admin.database().ref(`/presence/${opponentId}`);
-                opponentPresenceRef.once('value').then(snap => {
-                    if (snap.exists() && snap.val().gameId === gameId) {
-                        opponentPresenceRef.update({ state: 'online', gameId: null });
-                    }
-                });
-            }
-        });
-      } catch (error) {
-        console.error(`Failed to process abandonment for game ${gameId}:`, error);
-      }
-    }
-  });
-
-  */
 exports.handlePlayerDisconnect = functions.database
     .ref('/presence/{uid}')
     .onWrite(async (change, context) => {
@@ -774,7 +650,6 @@ exports.handlePlayerDisconnect = functions.database
         if (!gameId)
             return null;
         const gameDoc = await firestore.collection('games').doc(gameId).get();
-        // ✅ FIXED HERE
         if (!gameDoc.exists || ((_a = gameDoc.data()) === null || _a === void 0 ? void 0 : _a.status) !== 'inprogress' || ((_b = gameDoc.data()) === null || _b === void 0 ? void 0 : _b.isBotGame)) {
             return null;
         }
@@ -843,52 +718,143 @@ exports.handlePlayerDisconnect = functions.database
     }
     return null;
 });
-// --- SCHEDULED FUNCTIONS ---
-exports.startTournaments = functions.pubsub.schedule('every 1 minutes').onRun(async (context) => {
+// --- TOURNAMENT ADMIN ACTIONS (CALLABLE) ---
+exports.createTournament = functions.https.onCall(async (data, context) => {
+    // Assuming admin check is done via a custom claim or other mechanism
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    }
+    const { name, timeControl, startTime, durationMinutes, maxPlayers } = data;
+    // Add validation for inputs
+    if (!name || !timeControl || !startTime || !durationMinutes || !maxPlayers) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required tournament data.');
+    }
+    const newTournamentRef = firestore.collection('tournaments').doc();
+    await newTournamentRef.set({
+        name,
+        timeControl,
+        startTime: admin.firestore.Timestamp.fromMillis(startTime),
+        durationMinutes,
+        maxPlayers,
+        entryFee: 0, // Defaulting to 0 as per prompt
+        state: 'draft',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return { tournamentId: newTournamentRef.id };
+});
+exports.publishTournament = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    }
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    const tournamentDoc = await tournamentRef.get();
+    if (!tournamentDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+    }
+    const tournament = tournamentDoc.data();
+    validateTournamentStateTransition(tournament.state, 'published');
+    await tournamentRef.update({ state: 'published' });
+    return { success: true };
+});
+exports.lockTournamentEarly = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    }
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    const tournamentDoc = await tournamentRef.get();
+    if (!tournamentDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+    }
+    const tournament = tournamentDoc.data();
+    validateTournamentStateTransition(tournament.state, 'locked');
+    await tournamentRef.update({ state: 'locked' });
+    return { success: true };
+});
+exports.archiveTournament = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    }
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    const tournamentDoc = await tournamentRef.get();
+    if (!tournamentDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+    }
+    const tournament = tournamentDoc.data();
+    validateTournamentStateTransition(tournament.state, 'archived');
+    await tournamentRef.update({ state: 'archived' });
+    return { success: true };
+});
+// --- AUTOMATIC TOURNAMENT STATE TRANSITIONS ---
+exports.autoTransitionTournaments = functions.pubsub.schedule('every 1 minutes').onRun(async (context) => {
     const now = admin.firestore.Timestamp.now();
-    const query = firestore.collection('tournaments')
-        .where('status', '==', 'scheduled')
-        .where('startsAt', '<=', now);
-    const snapshot = await query.get();
-    if (snapshot.empty)
-        return null;
     const batch = firestore.batch();
-    snapshot.docs.forEach(doc => {
-        console.log(`Starting tournament ${doc.id}`);
-        batch.update(doc.ref, { status: 'running' });
+    // published -> locked
+    const publishedQuery = firestore.collection('tournaments')
+        .where('state', '==', 'published')
+        .where('startTime', '<=', now);
+    const publishedSnapshot = await publishedQuery.get();
+    publishedSnapshot.docs.forEach(doc => {
+        console.log(`Locking tournament ${doc.id} as start time has passed.`);
+        batch.update(doc.ref, { state: 'locked' });
+    });
+    // live -> completed
+    const liveQuery = firestore.collection('tournaments').where('state', '==', 'live');
+    const liveSnapshot = await liveQuery.get();
+    liveSnapshot.docs.forEach(doc => {
+        const t = doc.data();
+        const endTime = t.liveSince.toMillis() + (t.durationMinutes * 60 * 1000);
+        if (now.toMillis() >= endTime) {
+            console.log(`Completing tournament ${doc.id} as its duration has ended.`);
+            batch.update(doc.ref, { state: 'completed' });
+        }
+    });
+    // completed -> archived (after 10 minutes)
+    const tenMinutesAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - (10 * 60 * 1000));
+    const completedQuery = firestore.collection('tournaments')
+        .where('state', '==', 'completed')
+        .where('liveSince', '<=', tenMinutesAgo); // liveSince can approximate completion time for this
+    const completedSnapshot = await completedQuery.get();
+    completedSnapshot.docs.forEach(doc => {
+        console.log(`Archiving tournament ${doc.id}.`);
+        batch.update(doc.ref, { state: 'archived' });
     });
     return batch.commit();
 });
-exports.endTournaments = functions.pubsub.schedule('every 1 minutes').onRun(async (context) => {
-    const now = admin.firestore.Timestamp.now();
-    const query = firestore.collection('tournaments')
-        .where('status', '==', 'running')
-        .where('endsAt', '<=', now);
-    const snapshot = await query.get();
-    if (snapshot.empty)
-        return null;
-    const batch = firestore.batch();
-    snapshot.docs.forEach(doc => {
-        console.log(`Ending tournament ${doc.id}`);
-        batch.update(doc.ref, { status: 'completed' });
-    });
-    return batch.commit();
-});
-// --- TOURNAMENT STATE CHANGE TRIGGER ---
-exports.onTournamentStatusChange = functions.firestore
+exports.onTournamentStateChange = functions.firestore
     .document('/tournaments/{tournamentId}')
     .onUpdate(async (change, context) => {
     const tournamentId = context.params.tournamentId;
-    const beforeData = change.before.data();
-    const afterData = change.after.data();
-    // Tournament starts -> pair players
-    if (beforeData.status === 'scheduled' && afterData.status === 'running') {
-        console.log(`Tournament ${tournamentId} has started. Initiating first round of pairings.`);
+    const before = change.before.data();
+    const after = change.after.data();
+    // locked -> live
+    if (before.state === 'locked' && after.state === 'live') {
+        console.log(`Tournament ${tournamentId} is now live. Initiating pairings.`);
         await pairAndCreateMatches(tournamentId);
     }
-    // Tournament ends -> finalize results
-    if (beforeData.status === 'running' && afterData.status === 'completed') {
-        console.log(`Tournament ${tournamentId} has ended. Finalizing results.`);
+    // published -> locked (can also be triggered manually)
+    if (before.state === 'published' && after.state === 'locked') {
+        // Immediately transition to live after locking
+        console.log(`Tournament ${tournamentId} is locked. Transitioning to live.`);
+        await change.after.ref.update({
+            state: 'live',
+            liveSince: admin.firestore.FieldValue.serverTimestamp()
+        });
+    }
+    // live -> completed
+    if (before.state === 'live' && after.state === 'completed') {
+        console.log(`Tournament ${tournamentId} has completed. Finalizing results.`);
         await finalizeTournamentResults(tournamentId);
     }
 });
