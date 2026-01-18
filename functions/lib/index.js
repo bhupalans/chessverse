@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.bootstrapMakeAdmin = exports.grantAdminClaimHttp = exports.grantAdminClaim = exports.onTournamentStateChange = exports.autoTransitionTournaments = exports.leaveTournament = exports.joinTournament = exports.archiveTournament = exports.lockTournamentEarly = exports.publishTournament = exports.createTournament = exports.handlePlayerDisconnect = exports.handleGameAction = exports.onGameWrite = exports.submitMove = void 0;
+exports.bootstrapMakeAdmin = exports.grantAdminClaimHttp = exports.grantAdminClaim = exports.onTournamentStateChange = exports.autoTransitionTournaments = exports.leaveTournament = exports.joinTournament = exports.deleteTournament = exports.archiveTournament = exports.lockTournamentEarly = exports.publishTournament = exports.createTournament = exports.handlePlayerDisconnect = exports.handleGameAction = exports.onGameWrite = exports.submitMove = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const chess_js_1 = require("chess.js");
@@ -720,9 +720,8 @@ exports.handlePlayerDisconnect = functions.database
 });
 // --- TOURNAMENT ADMIN ACTIONS (CALLABLE) ---
 exports.createTournament = functions.https.onCall(async (data, context) => {
-    // Assuming admin check is done via a custom claim or other mechanism
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
     }
     const { name, timeControl, startTime, durationMinutes, maxPlayers } = data;
     // Add validation for inputs
@@ -744,8 +743,8 @@ exports.createTournament = functions.https.onCall(async (data, context) => {
     return { tournamentId: newTournamentRef.id };
 });
 exports.publishTournament = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
     }
     const { tournamentId } = data;
     if (!tournamentId) {
@@ -762,8 +761,8 @@ exports.publishTournament = functions.https.onCall(async (data, context) => {
     return { success: true };
 });
 exports.lockTournamentEarly = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
     }
     const { tournamentId } = data;
     if (!tournamentId) {
@@ -780,8 +779,8 @@ exports.lockTournamentEarly = functions.https.onCall(async (data, context) => {
     return { success: true };
 });
 exports.archiveTournament = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
     }
     const { tournamentId } = data;
     if (!tournamentId) {
@@ -796,6 +795,41 @@ exports.archiveTournament = functions.https.onCall(async (data, context) => {
     validateTournamentStateTransition(tournament.state, 'archived');
     await tournamentRef.update({ state: 'archived' });
     return { success: true };
+});
+exports.deleteTournament = functions.https.onCall(async (data, context) => {
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
+    }
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    try {
+        await firestore.runTransaction(async (transaction) => {
+            const tournamentDoc = await transaction.get(tournamentRef);
+            if (!tournamentDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+            }
+            const tournament = tournamentDoc.data();
+            if (tournament.state !== 'draft') {
+                throw new functions.https.HttpsError('failed-precondition', 'Only draft tournaments can be deleted.');
+            }
+            const playersSnapshot = await tournamentRef.collection('players').limit(1).get();
+            if (!playersSnapshot.empty) {
+                throw new functions.https.HttpsError('failed-precondition', 'Cannot delete a draft tournament that already has players.');
+            }
+            transaction.delete(tournamentRef);
+        });
+        return { success: true };
+    }
+    catch (error) {
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        console.error('Error deleting tournament:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred while deleting the tournament.');
+    }
 });
 exports.joinTournament = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
