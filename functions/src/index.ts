@@ -1066,3 +1066,5 @@ export const onTournamentStateChange = functions.firestore
             await finalizeTournamentResults(tournamentId);
         }
     });
+
+    

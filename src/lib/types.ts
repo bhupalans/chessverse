@@ -127,6 +127,9 @@ export type TournamentPlayer = {
   gamesPlayed: number;
   activeGameId: string | null;
   joinedAt: any; // Firestore Timestamp
+  hasPlayedAgainst?: string[];
 };
+
+    
 
     
