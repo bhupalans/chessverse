@@ -1067,4 +1067,41 @@ export const onTournamentStateChange = functions.firestore
         }
     });
 
+/**
+ * TEMPORARY UTILITY FUNCTION
+ * This function is for initial setup only to grant the first admin role.
+ * It should be DELETED from production environments after the initial admin user is set up.
+ * Security Note: This function allows a user to make themselves an admin, or an existing admin to grant claims.
+ */
+export const grantAdminClaim = functions.https.onCall(async (data, context) => {
+    // 1. Check if the user is authenticated.
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'The function must be called while authenticated.');
+    }
+
+    const { uid } = data;
+    if (!uid) {
+        throw new functions.https.HttpsError('invalid-argument', 'The function must be called with a "uid" argument.');
+    }
+    
+    // 2. Security Check: Only allow a user to make themselves an admin, or an existing admin to make another user an admin.
+    const isSelfGrant = context.auth.uid === uid;
+    const isExistingAdmin = context.auth.token.admin === true;
+
+    if (!isSelfGrant && !isExistingAdmin) {
+        throw new functions.https.HttpsError('permission-denied', 'You do not have permission to grant admin claims.');
+    }
+
+    try {
+        // 3. Set the custom claim.
+        await admin.auth().setCustomUserClaims(uid, { admin: true });
+        console.log(`Successfully granted admin claim to user: ${uid}`);
+        
+        // 4. Return success.
+        return { success: true, message: `Admin claim granted to user ${uid}. Please log out and log back in for it to take effect.` };
+    } catch (error) {
+        console.error('Error setting custom claim:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred while setting the custom claim.');
+    }
+});
     
