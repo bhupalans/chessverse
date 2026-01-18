@@ -1,125 +1,168 @@
 'use client';
 
-import { useCollection, useFirestore, useMemoFirebase } from '@/firebase';
-import { collection, query, where, orderBy } from 'firebase/firestore';
-import type { Tournament as TournamentType, TimeControl } from '@/lib/types';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useMemo, useState } from 'react';
+import { collection, query, orderBy } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirestore, useCollection, useUser, useMemoFirebase } from '@/firebase';
+import { useToast } from '@/hooks/use-toast';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import type { Tournament, TimeControl } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
-// Helper function to format time control
-const formatTimeControl = (timeControl: TimeControl): string => {
-  if (!timeControl) return 'Unknown';
-  const initialMinutes = Math.floor(timeControl.initial / 60000);
-  const incrementSeconds = Math.floor(timeControl.increment / 1000);
-  
-  if (initialMinutes === 1 && incrementSeconds === 0) return '1+0 Bullet';
-  if (initialMinutes === 3 && incrementSeconds === 0) return '3+0 Blitz';
-  if (initialMinutes === 5 && incrementSeconds === 0) return '5+0 Blitz';
-  if (initialMinutes === 10 && incrementSeconds === 5) return '10+5 Rapid';
-  return `${initialMinutes}+${incrementSeconds}`;
+const formatTimeControl = (tc: TimeControl) => {
+    if (!tc) return 'N/A';
+    const initialMinutes = Math.floor(tc.initial / 60000);
+    const incrementSeconds = tc.increment / 1000;
+    return `${initialMinutes}+${incrementSeconds}`;
 };
-
-function TournamentCard({ tournament }: { tournament: TournamentType }) {
-  const getStatusBadge = () => {
-    const state = tournament.state;
-    let variant: 'default' | 'secondary' | 'destructive' | 'outline' = 'secondary';
-    let text: string = state.charAt(0).toUpperCase() + state.slice(1);
-
-    if (state === 'live') {
-      variant = 'destructive';
-      text = 'Live';
-    } else if (state === 'published') {
-      variant = 'default';
-      text = 'Open';
-    }
-
-    return <Badge variant={variant}>{text}</Badge>;
-  };
-
-  return (
-    <Card className="transition-all hover:shadow-md">
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle>{tournament.name}</CardTitle>
-            <CardDescription className="flex items-center flex-wrap gap-x-4 gap-y-1 mt-2">
-              <span className="flex items-center gap-1">
-                <Clock className="h-4 w-4" /> {formatTimeControl(tournament.timeControl)}
-              </span>
-              <span className="flex items-center gap-1">
-                <Users className="h-4 w-4" /> {tournament.playerCount} / {tournament.maxPlayers}
-              </span>
-            </CardDescription>
-          </div>
-          {getStatusBadge()}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="text-sm text-muted-foreground">
-          Starts:{' '}
-          <span className="font-semibold text-foreground">
-            {format(tournament.startTime.toDate(), 'MMM d, h:mm a')}
-          </span>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default function TournamentsPage() {
   const firestore = useFirestore();
+  const { user } = useUser();
+  const { toast } = useToast();
+  const [joiningId, setJoiningId] = useState<string | null>(null);
 
   const tournamentsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(
-      collection(firestore, 'tournaments'),
-      where('state', 'in', ['published', 'live']),
-      orderBy('startTime', 'asc')
-    );
+    return query(collection(firestore, 'tournaments'), orderBy('startTime', 'asc'));
   }, [firestore]);
 
-  const { data: tournaments, isLoading } = useCollection<TournamentType>(tournamentsQuery);
+  const { data: allTournaments, isLoading: areTournamentsLoading } = useCollection<Tournament>(tournamentsQuery);
+
+  const visibleTournaments = useMemo(() => {
+    return allTournaments?.filter(t => t.state === 'published' || t.state === 'live') || [];
+  }, [allTournaments]);
+
+  const handleJoinTournament = async (tournamentId: string) => {
+    if (!user) {
+      toast({
+        variant: 'destructive',
+        title: 'Not Authenticated',
+        description: 'You must be logged in to join a tournament.',
+      });
+      return;
+    }
+    setJoiningId(tournamentId);
+    try {
+      const functions = getFunctions();
+      const joinTournament = httpsCallable(functions, 'joinTournament');
+      await joinTournament({ tournamentId });
+      toast({
+        title: 'Successfully Joined!',
+        description: 'You have been registered for the tournament.',
+      });
+    } catch (error: any) {
+      console.error('Error joining tournament:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to Join',
+        description: error.message || 'An unexpected error occurred.',
+      });
+    } finally {
+      setJoiningId(null);
+    }
+  };
+  
+  const renderTournamentCard = (tournament: Tournament) => {
+    const isJoining = joiningId === tournament.id;
+    const canJoin = tournament.state === 'published' && tournament.playerCount < tournament.maxPlayers;
+
+    return (
+        <Card key={tournament.id} className="flex flex-col">
+          <CardHeader>
+             <div className="flex justify-between items-start">
+              <CardTitle>{tournament.name}</CardTitle>
+              <Badge variant={tournament.state === 'live' ? 'destructive' : 'default'}>
+                {tournament.state.charAt(0).toUpperCase() + tournament.state.slice(1)}
+              </Badge>
+            </div>
+            <CardDescription className="flex items-center gap-1 text-sm">
+                {formatTimeControl(tournament.timeControl)} Blitz
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-grow space-y-4">
+             <div className="flex items-center text-muted-foreground">
+              <Clock className="mr-2 h-4 w-4" />
+              <span>{format(tournament.startTime.toDate(), 'MMM d, h:mm a')}</span>
+            </div>
+            <div className="flex items-center text-muted-foreground">
+              <Users className="mr-2 h-4 w-4" />
+              <span>{tournament.playerCount} / {tournament.maxPlayers} players</span>
+            </div>
+          </CardContent>
+          <CardFooter>
+            {canJoin && (
+              <Button 
+                className="w-full"
+                onClick={() => handleJoinTournament(tournament.id)}
+                disabled={isJoining}
+              >
+                {isJoining && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isJoining ? 'Joining...' : 'Join Tournament'}
+              </Button>
+            )}
+             {tournament.state === 'live' && (
+              <Button className="w-full" variant="secondary" disabled>
+                Live Now
+              </Button>
+            )}
+          </CardFooter>
+        </Card>
+    );
+  }
+
+  const renderSkeletonCard = (key: number) => (
+    <Card key={key} className="flex flex-col">
+      <CardHeader>
+        <div className="flex justify-between items-start">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-6 w-16" />
+        </div>
+        <Skeleton className="h-4 w-1/3 mt-2" />
+      </CardHeader>
+      <CardContent className="flex-grow space-y-4">
+        <div className="flex items-center">
+            <Skeleton className="h-4 w-4 mr-2" />
+            <Skeleton className="h-4 w-1/2" />
+        </div>
+        <div className="flex items-center">
+            <Skeleton className="h-4 w-4 mr-2" />
+            <Skeleton className="h-4 w-1/2" />
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Skeleton className="h-10 w-full" />
+      </CardFooter>
+    </Card>
+  );
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Tournaments</h1>
-        <p className="text-muted-foreground">Join a tournament and test your skills.</p>
+         <h1 className="text-3xl font-bold tracking-tight">Tournaments</h1>
+         <p className="text-muted-foreground">Join an upcoming arena tournament.</p>
       </div>
-
-      {isLoading && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-1/2 mt-2" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-4 w-1/3" />
-              </CardContent>
-            </Card>
-          ))}
+      
+      {areTournamentsLoading && (
+         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => renderSkeletonCard(i))}
         </div>
       )}
 
-      {!isLoading && tournaments && tournaments.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {tournaments.map((tournament) => (
-            <TournamentCard key={tournament.id} tournament={tournament} />
-          ))}
+      {!areTournamentsLoading && visibleTournaments.length === 0 && (
+         <div className="text-center py-16 border border-dashed rounded-lg">
+          <h2 className="text-xl font-semibold">No Tournaments Available</h2>
+          <p className="text-muted-foreground mt-2">Check back soon for new tournaments.</p>
         </div>
       )}
-
-      {!isLoading && (!tournaments || tournaments.length === 0) && (
-        <div className="flex flex-col items-center justify-center text-center rounded-lg border border-dashed p-12">
-          <h3 className="text-xl font-semibold">No Tournaments Available</h3>
-          <p className="text-muted-foreground mt-2">
-            Check back later! New tournaments are scheduled regularly.
-          </p>
+      
+      {!areTournamentsLoading && visibleTournaments.length > 0 && (
+         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {visibleTournaments.map(renderTournamentCard)}
         </div>
       )}
     </div>

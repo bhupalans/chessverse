@@ -1,4 +1,3 @@
-
 'use client';
 
 import { firebaseConfig } from '@/firebase/config';
@@ -7,41 +6,26 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 
-// IMPORTANT: DO NOT MODIFY THIS FUNCTION
+// ✅ SINGLE PROJECT INITIALIZATION (NO AUTO-CONFIG)
 export function initializeFirebase() {
-  if (getApps().length) {
-    return getSdks(getApp());
-  }
+  const firebaseApp =
+    getApps().length > 0
+      ? getApp()
+      : initializeApp(firebaseConfig);
 
-  let firebaseApp;
-  // In a production environment (like the deployed preview URL), Firebase App Hosting
-  // provides the necessary configuration automatically. Calling initializeApp() with
-  // no arguments allows it to use this automatically provided config.
-  if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && window.location.hostname.endsWith('.hosted.app')) {
-    try {
-      firebaseApp = initializeApp();
-    } catch (e) {
-      console.warn('Automatic Firebase initialization failed in production. Falling back to firebaseConfig.', e);
-      // As a fallback in case auto-init fails, use the local config.
-      firebaseApp = initializeApp(firebaseConfig);
-    }
-  } else {
-    // In the development environment (the workstation), we use our explicit config file.
-    firebaseApp = initializeApp(firebaseConfig);
-  }
-
+      console.log(
+        '🔥 Firebase Project ID:',
+        firebaseApp.options.projectId
+      );
   return getSdks(firebaseApp);
 }
 
 export function getSdks(firebaseApp: FirebaseApp) {
-  const firestore = getFirestore(firebaseApp);
-  const auth = getAuth(firebaseApp);
-  const realtimeDB = getDatabase(firebaseApp);
   return {
     firebaseApp,
-    auth,
-    firestore,
-    realtimeDB,
+    auth: getAuth(firebaseApp),
+    firestore: getFirestore(firebaseApp),
+    realtimeDB: getDatabase(firebaseApp),
   };
 }
 

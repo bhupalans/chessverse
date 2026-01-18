@@ -10,27 +10,32 @@ import type { Game } from '@/lib/types';
 import type { ToastActionElement } from '@/components/ui/toast';
 
 export function InvitationListener() {
+  // ✅ Hooks are ALWAYS called in the same order
   const { user } = useUser();
   const firestore = useFirestore();
   const router = useRouter();
   const { toast, dismiss } = useToast();
   const displayedToasts = useRef<Map<string, string>>(new Map());
 
+  // ✅ Query exists ONLY when user exists
   const invitationsQuery = useMemoFirebase(() => {
-    if (!user) return null;
+    if (!user) return undefined;
+
     return query(
       collection(firestore, 'games'),
       where('player2Id', '==', user.uid),
       where('status', '==', 'invited')
     );
-  }, [firestore, user]);
+  }, [firestore, user?.uid]);
 
+  // ✅ Safe: hook handles undefined by doing nothing
   const { data: invitations } = useCollection<Game>(invitationsQuery);
 
   useEffect(() => {
-    const currentInvitationIds = new Set(invitations?.map(inv => inv.id) || []);
+    if (!user || !invitations) return;
 
-    // Dismiss toasts for invitations that are no longer active
+    const currentInvitationIds = new Set(invitations.map(inv => inv.id));
+
     displayedToasts.current.forEach((toastId, gameId) => {
       if (!currentInvitationIds.has(gameId)) {
         dismiss(toastId);
@@ -38,66 +43,53 @@ export function InvitationListener() {
       }
     });
 
-    if (invitations && invitations.length > 0) {
-      invitations.forEach((invitation) => {
-        // Only show a toast if one for this game isn't already displayed
-        if (!displayedToasts.current.has(invitation.id)) {
-          const inviterName = invitation.player1?.username || 'Another player';
-          
-          const { id: toastId, dismiss: dismissToast } = toast({
-            title: 'Game Invitation',
-            description: `${inviterName} has invited you to a game.`,
-            duration: Infinity,
-            action: (
-              <div className="flex gap-2 mt-2">
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    dismissToast();
-                    displayedToasts.current.delete(invitation.id);
-                    try {
-                      const gameRef = doc(firestore, 'games', invitation.id);
-                      await updateDoc(gameRef, { status: 'inprogress' });
-                      router.push(`/game/${invitation.id}`);
-                    } catch (e) {
-                       console.error("Failed to accept invitation", e)
-                    }
-                  }}
-                >
-                  Accept
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    dismissToast();
-                    displayedToasts.current.delete(invitation.id);
-                    try {
-                       const gameRef = doc(firestore, 'games', invitation.id);
-                       await deleteDoc(gameRef);
-                    } catch(e) {
-                        console.error("Failed to decline invitation", e)
-                    }
-                  }}
-                >
-                  Decline
-                </Button>
-              </div>
-            ) as ToastActionElement,
-            onClose: () => {
-              displayedToasts.current.delete(invitation.id);
-            }
-          });
+    invitations.forEach((invitation) => {
+      if (displayedToasts.current.has(invitation.id)) return;
 
-          if(toastId) {
-            displayedToasts.current.set(invitation.id, toastId);
-          }
+      const inviterName = invitation.player1?.username || 'Another player';
+
+      const { id: toastId, dismiss: dismissToast } = toast({
+        title: 'Game Invitation',
+        description: `${inviterName} has invited you to a game.`,
+        duration: Infinity,
+        action: (
+          <div className="flex gap-2 mt-2">
+            <Button
+              size="sm"
+              onClick={async () => {
+                dismissToast();
+                displayedToasts.current.delete(invitation.id);
+                const gameRef = doc(firestore, 'games', invitation.id);
+                await updateDoc(gameRef, { status: 'inprogress' });
+                router.push(`/game/${invitation.id}`);
+              }}
+            >
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                dismissToast();
+                displayedToasts.current.delete(invitation.id);
+                const gameRef = doc(firestore, 'games', invitation.id);
+                await deleteDoc(gameRef);
+              }}
+            >
+              Decline
+            </Button>
+          </div>
+        ) as ToastActionElement,
+        onClose: () => {
+          displayedToasts.current.delete(invitation.id);
         }
       });
-    }
-  }, [invitations, firestore, router, toast, dismiss]);
 
-  return null; // This component does not render anything
+      if (toastId) {
+        displayedToasts.current.set(invitation.id, toastId);
+      }
+    });
+  }, [user, invitations, firestore, router, toast, dismiss]);
+
+  return null;
 }
-
-    
