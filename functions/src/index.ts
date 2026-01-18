@@ -1105,3 +1105,65 @@ export const grantAdminClaim = functions.https.onCall(async (data, context) => {
     }
 });
     
+
+/**
+ * DANGEROUS: TEMPORARY ADMINISTRATIVE FUNCTION
+ * ============================================
+ * This HTTP function is designed for ONE-TIME use to grant the first administrator role.
+ * It allows any authenticated user to make THEMSELVES an admin by calling this endpoint
+ * with their own UID.
+ *
+ * !!! DELETE THIS FUNCTION FROM 'functions/src/index.ts' IMMEDIATELY AFTER USE !!!
+ */
+export const grantAdminClaimHttp = functions.https.onRequest(async (req, res) => {
+    // Set CORS headers for preflight requests
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET');
+    res.set('Access-Control-Allow-Headers', 'Authorization');
+
+    if (req.method === 'OPTIONS') {
+        // End preflight requests with 204 No Content
+        res.status(204).send('');
+        return;
+    }
+
+    // 1. Get the ID token from the Authorization header.
+    const idToken = req.headers.authorization?.split('Bearer ')[1];
+    if (!idToken) {
+        res.status(401).send('Unauthorized: No authentication token provided.');
+        return;
+    }
+
+    // 2. Verify the ID token to get the authenticated user's UID.
+    let decodedToken;
+    try {
+        decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+        res.status(401).send('Unauthorized: Invalid authentication token.');
+        return;
+    }
+    const requesterUid = decodedToken.uid;
+
+    // 3. Get the target UID from the query parameter.
+    const targetUid = req.query.uid;
+    if (!targetUid || typeof targetUid !== 'string') {
+        res.status(400).send('Bad Request: You must provide a `uid` query parameter.');
+        return;
+    }
+    
+    // 4. SECURITY CHECK: Only allow a user to grant the claim to themselves.
+    if (requesterUid !== targetUid) {
+        res.status(403).send('Forbidden: You can only grant admin claims to yourself.');
+        return;
+    }
+
+    // 5. Grant the custom claim.
+    try {
+        await admin.auth().setCustomUserClaims(targetUid, { admin: true });
+        console.log(`Successfully granted admin claim to user: ${targetUid}`);
+        res.status(200).send('Admin claim granted');
+    } catch (error: any) {
+        console.error('Error setting custom claim:', error);
+        res.status(500).send('An internal error occurred while setting the custom claim.');
+    }
+});
