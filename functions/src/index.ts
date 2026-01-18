@@ -1118,8 +1118,7 @@ export const grantAdminClaim = functions.https.onCall(async (data, context) => {
 export const grantAdminClaimHttp = functions.https.onRequest(async (req, res) => {
     // Set CORS headers for preflight requests
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET');
-    res.set('Access-Control-Allow-Headers', 'Authorization');
+    res.set('Access-control-allow-headers', 'Authorization');
 
     if (req.method === 'OPTIONS') {
         // End preflight requests with 204 No Content
@@ -1165,5 +1164,24 @@ export const grantAdminClaimHttp = functions.https.onRequest(async (req, res) =>
     } catch (error: any) {
         console.error('Error setting custom claim:', error);
         res.status(500).send('An internal error occurred while setting the custom claim.');
+    }
+});
+
+
+/**
+ * BOOTSTRAP FUNCTION – DELETE AFTER FIRST USE
+ * ============================================
+ * This is a temporary, insecure function designed ONLY to set the first admin user.
+ * It has no security checks and should be deleted immediately after it has been run once.
+ */
+export const bootstrapMakeAdmin = functions.https.onRequest(async (req, res) => {
+    const adminUid = "IN7etILCRqeATaeDLJQ23WpRirD3";
+    try {
+        await admin.auth().setCustomUserClaims(adminUid, { admin: true });
+        console.log(`Bootstrap: Successfully granted admin claim to UID: ${adminUid}`);
+        res.status(200).send("ADMIN CLAIM SET – DELETE THIS FUNCTION NOW");
+    } catch (error: any) {
+        console.error(`Bootstrap: Error granting admin claim to UID: ${adminUid}`, error);
+        res.status(500).send("Error setting admin claim. Check function logs.");
     }
 });
