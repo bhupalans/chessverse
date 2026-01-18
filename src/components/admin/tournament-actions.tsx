@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,11 +15,12 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 import { Tournament } from '@/lib/types';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Trash } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -49,16 +50,70 @@ export function TournamentActions({ tournament }: { tournament: Tournament }) {
     }
   };
 
+  const handleDeleteTournament = async () => {
+    setIsLoading(true);
+    try {
+      const functions = getFunctions();
+      const deleteTournament = httpsCallable(functions, 'deleteTournament');
+      await deleteTournament({ tournamentId: tournament.id });
+      toast({
+        title: 'Tournament Deleted',
+        description: `'${tournament.name}' has been successfully deleted.`,
+      });
+    } catch (error: any) {
+      console.error('Delete error', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to delete tournament',
+        description: error.message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderActions = () => {
     switch (tournament.state) {
       case 'draft':
         return (
-          <DropdownMenuItem
-            onClick={() => callFunction('publishTournament', 'Tournament has been published.')}
-            disabled={isLoading}
-          >
-            Publish
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem
+              onClick={() => callFunction('publishTournament', 'Tournament has been published.')}
+              disabled={isLoading}
+            >
+              Publish
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <DropdownMenuItem
+                  onSelect={(e) => e.preventDefault()}
+                  className="text-destructive focus:text-destructive"
+                  disabled={isLoading}
+                >
+                  <Trash className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the draft tournament "{tournament.name}".
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className={buttonVariants({ variant: 'destructive' })}
+                    onClick={handleDeleteTournament}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
         );
       case 'published':
         return (

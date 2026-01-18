@@ -808,9 +808,8 @@ export const handleGameAction = functions.https.onCall(async (data, context) => 
 // --- TOURNAMENT ADMIN ACTIONS (CALLABLE) ---
 
 export const createTournament = functions.https.onCall(async (data, context) => {
-    // Assuming admin check is done via a custom claim or other mechanism
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Admin access required.');
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
     }
 
     const { name, timeControl, startTime, durationMinutes, maxPlayers } = data;
@@ -836,7 +835,7 @@ export const createTournament = functions.https.onCall(async (data, context) => 
 });
 
 export const publishTournament = functions.https.onCall(async (data, context) => {
-    if (!context.auth) { throw new functions.https.HttpsError('unauthenticated', 'Admin access required.'); }
+    if (!context.auth || !context.auth.token.admin) { throw new functions.https.HttpsError('permission-denied', 'Admin access required.'); }
     const { tournamentId } = data;
     if (!tournamentId) { throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.'); }
 
@@ -852,7 +851,7 @@ export const publishTournament = functions.https.onCall(async (data, context) =>
 });
 
 export const lockTournamentEarly = functions.https.onCall(async (data, context) => {
-    if (!context.auth) { throw new functions.https.HttpsError('unauthenticated', 'Admin access required.'); }
+    if (!context.auth || !context.auth.token.admin) { throw new functions.https.HttpsError('permission-denied', 'Admin access required.'); }
     const { tournamentId } = data;
     if (!tournamentId) { throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.'); }
 
@@ -868,7 +867,7 @@ export const lockTournamentEarly = functions.https.onCall(async (data, context) 
 });
 
 export const archiveTournament = functions.https.onCall(async (data, context) => {
-    if (!context.auth) { throw new functions.https.HttpsError('unauthenticated', 'Admin access required.'); }
+    if (!context.auth || !context.auth.token.admin) { throw new functions.https.HttpsError('permission-denied', 'Admin access required.'); }
     const { tournamentId } = data;
     if (!tournamentId) { throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.'); }
 
@@ -882,6 +881,50 @@ export const archiveTournament = functions.https.onCall(async (data, context) =>
     await tournamentRef.update({ state: 'archived' });
     return { success: true };
 });
+
+export const deleteTournament = functions.https.onCall(async (data, context) => {
+    if (!context.auth || !context.auth.token.admin) {
+        throw new functions.https.HttpsError('permission-denied', 'Admin access required.');
+    }
+
+    const { tournamentId } = data;
+    if (!tournamentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Tournament ID is required.');
+    }
+
+    const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    
+    try {
+        await firestore.runTransaction(async (transaction) => {
+            const tournamentDoc = await transaction.get(tournamentRef);
+
+            if (!tournamentDoc.exists) {
+                throw new functions.https.HttpsError('not-found', 'Tournament not found.');
+            }
+
+            const tournament = tournamentDoc.data()!;
+            if (tournament.state !== 'draft') {
+                throw new functions.https.HttpsError('failed-precondition', 'Only draft tournaments can be deleted.');
+            }
+
+            const playersSnapshot = await tournamentRef.collection('players').limit(1).get();
+            if (!playersSnapshot.empty) {
+                throw new functions.https.HttpsError('failed-precondition', 'Cannot delete a draft tournament that already has players.');
+            }
+
+            transaction.delete(tournamentRef);
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        console.error('Error deleting tournament:', error);
+        throw new functions.https.HttpsError('internal', 'An internal error occurred while deleting the tournament.');
+    }
+});
+
 
 export const joinTournament = functions.https.onCall(async (data, context) => {
     if (!context.auth) {

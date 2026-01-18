@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.grantAdminClaimHttp = exports.grantAdminClaim = exports.onTournamentStateChange = exports.autoTransitionTournaments = exports.leaveTournament = exports.joinTournament = exports.archiveTournament = exports.lockTournamentEarly = exports.publishTournament = exports.createTournament = exports.handlePlayerDisconnect = exports.handleGameAction = exports.onGameWrite = exports.submitMove = void 0;
+exports.bootstrapMakeAdmin = exports.grantAdminClaimHttp = exports.grantAdminClaim = exports.onTournamentStateChange = exports.autoTransitionTournaments = exports.leaveTournament = exports.joinTournament = exports.archiveTournament = exports.lockTournamentEarly = exports.publishTournament = exports.createTournament = exports.handlePlayerDisconnect = exports.handleGameAction = exports.onGameWrite = exports.submitMove = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const chess_js_1 = require("chess.js");
@@ -1008,8 +1008,7 @@ exports.grantAdminClaimHttp = functions.https.onRequest(async (req, res) => {
     var _a;
     // Set CORS headers for preflight requests
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET');
-    res.set('Access-Control-Allow-Headers', 'Authorization');
+    res.set('Access-control-allow-headers', 'Authorization');
     if (req.method === 'OPTIONS') {
         // End preflight requests with 204 No Content
         res.status(204).send('');
@@ -1051,6 +1050,24 @@ exports.grantAdminClaimHttp = functions.https.onRequest(async (req, res) => {
     catch (error) {
         console.error('Error setting custom claim:', error);
         res.status(500).send('An internal error occurred while setting the custom claim.');
+    }
+});
+/**
+ * BOOTSTRAP FUNCTION – DELETE AFTER FIRST USE
+ * ============================================
+ * This is a temporary, insecure function designed ONLY to set the first admin user.
+ * It has no security checks and should be deleted immediately after it has been run once.
+ */
+exports.bootstrapMakeAdmin = functions.https.onRequest(async (req, res) => {
+    const adminUid = "IN7etILCRqeATaeDLJQ23WpRirD3";
+    try {
+        await admin.auth().setCustomUserClaims(adminUid, { admin: true });
+        console.log(`Bootstrap: Successfully granted admin claim to UID: ${adminUid}`);
+        res.status(200).send("ADMIN CLAIM SET – DELETE THIS FUNCTION NOW");
+    }
+    catch (error) {
+        console.error(`Bootstrap: Error granting admin claim to UID: ${adminUid}`, error);
+        res.status(500).send("Error setting admin claim. Check function logs.");
     }
 });
 //# sourceMappingURL=index.js.map
