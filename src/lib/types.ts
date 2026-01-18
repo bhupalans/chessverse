@@ -1,4 +1,5 @@
 
+
 export type Player = {
   id: string;
   username: string;
@@ -94,14 +95,24 @@ export type LiveGame = {
     clocks?: LiveClock;
 }
 
+export type TournamentState =
+  | 'draft'
+  | 'published'
+  | 'locked'
+  | 'live'
+  | 'completed'
+  | 'archived';
+
 export type Tournament = {
   id: string;
   name: string;
   timeControl: TimeControl;
   entryFee: number;
-  startsAt: any; // Firestore Timestamp
-  endsAt: any; // Firestore Timestamp
-  status: 'scheduled' | 'running' | 'completed';
+  state: TournamentState;
+  startTime: any; // Firestore Timestamp
+  durationMinutes: number;
+  maxPlayers: number;
+  liveSince?: any; // Firestore Timestamp
   createdAt: any; // Firestore Timestamp
   finalStandings?: any[];
 };

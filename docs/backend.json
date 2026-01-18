@@ -178,24 +178,35 @@
           "type": "number",
           "description": "Entry fee for the tournament."
         },
-        "startsAt": {
+        "startTime": {
           "type": "string",
           "format": "date-time",
-          "description": "Timestamp for when the tournament starts."
+          "description": "Timestamp for when the tournament registration locks and it prepares to start."
         },
-        "endsAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Timestamp for when the tournament ends."
+        "durationMinutes": {
+          "type": "number",
+          "description": "Duration of the tournament in minutes after it goes live."
         },
-        "status": {
+        "maxPlayers": {
+          "type": "number",
+          "description": "Maximum number of players that can join."
+        },
+        "state": {
           "type": "string",
           "enum": [
-            "scheduled",
-            "running",
-            "completed"
+            "draft",
+            "published",
+            "locked",
+            "live",
+            "completed",
+            "archived"
           ],
-          "description": "Current status of the tournament."
+          "description": "The current state of the tournament."
+        },
+        "liveSince": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp for when the tournament went live and games began."
         },
         "createdAt": {
           "type": "string",
@@ -214,9 +225,10 @@
         "id",
         "name",
         "timeControl",
-        "startsAt",
-        "endsAt",
-        "status",
+        "startTime",
+        "durationMinutes",
+        "maxPlayers",
+        "state",
         "createdAt"
       ]
     },
@@ -345,3 +357,5 @@
     ]
   }
 }
+
+    
