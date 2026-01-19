@@ -392,13 +392,21 @@ function GamePageContent() {
   const renderGameOver = () => {
     if (!finalGameOver || arePlayersLoading) return null;
 
-    const { reason, winnerId } = firestoreGame;
+    const { reason, winnerId, isTournamentGame, tournamentId } = firestoreGame;
     const isDraw = winnerId === 'd';
     
     let winnerName = 'Draw';
     if (!isDraw && whitePlayer && blackPlayer) {
       winnerName = winnerId === 'w' ? whitePlayer.username : blackPlayer.username;
     }
+    
+    const handleNavigation = () => {
+        if (isTournamentGame && tournamentId) {
+            router.push(`/tournaments/${tournamentId}/waiting`);
+        } else {
+            router.push('/');
+        }
+    };
 
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg z-20">
@@ -415,8 +423,8 @@ function GamePageContent() {
           </p>
           <Button 
             className="mt-6" 
-            onClick={() => router.push('/')}>
-            Back to Lobby
+            onClick={handleNavigation}>
+            {isTournamentGame ? 'Back to Tournament' : 'Back to Lobby'}
           </Button>
         </div>
       </div>
