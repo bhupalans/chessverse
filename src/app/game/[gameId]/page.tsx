@@ -402,7 +402,7 @@ function GamePageContent() {
     
     const handleNavigation = () => {
         if (isTournamentGame && tournamentId) {
-            router.push(`/tournaments/${tournamentId}/waiting`);
+            router.push(`/tournaments/${tournamentId}/intermission`);
         } else {
             router.push('/');
         }
@@ -424,7 +424,7 @@ function GamePageContent() {
           <Button 
             className="mt-6" 
             onClick={handleNavigation}>
-            {isTournamentGame ? 'Back to Tournament' : 'Back to Lobby'}
+            {isTournamentGame ? 'Next Round' : 'Back to Lobby'}
           </Button>
         </div>
       </div>
