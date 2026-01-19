@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useFirestore, useCollection, useUser, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useUser, useMemoFirebase, useDoc } from '@/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -20,24 +20,22 @@ const formatTimeControl = (tc: TimeControl) => {
     return `${initialMinutes}+${incrementSeconds}`;
 };
 
-export default function TournamentsPage() {
-  const firestore = useFirestore();
+function TournamentCard({ tournament }: { tournament: Tournament }) {
   const { user } = useUser();
+  const firestore = useFirestore();
   const { toast } = useToast();
-  const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const tournamentsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'tournaments'), orderBy('startTime', 'asc'));
-  }, [firestore]);
+  const playerDocRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'tournaments', tournament.id, 'players', user.uid);
+  }, [firestore, user, tournament.id]);
 
-  const { data: allTournaments, isLoading: areTournamentsLoading } = useCollection<Tournament>(tournamentsQuery);
+  const { data: playerDoc, isLoading: isPlayerLoading } = useDoc(playerDocRef);
 
-  const visibleTournaments = useMemo(() => {
-    return allTournaments?.filter(t => t.state === 'published' || t.state === 'live') || [];
-  }, [allTournaments]);
+  const hasJoined = !!playerDoc;
 
-  const handleJoinTournament = async (tournamentId: string) => {
+  const handleJoinTournament = async () => {
     if (!user) {
       toast({
         variant: 'destructive',
@@ -46,11 +44,11 @@ export default function TournamentsPage() {
       });
       return;
     }
-    setJoiningId(tournamentId);
+    setIsProcessing(true);
     try {
       const functions = getFunctions();
       const joinTournament = httpsCallable(functions, 'joinTournament');
-      await joinTournament({ tournamentId });
+      await joinTournament({ tournamentId: tournament.id });
       toast({
         title: 'Successfully Joined!',
         description: 'You have been registered for the tournament.',
@@ -63,58 +61,102 @@ export default function TournamentsPage() {
         description: error.message || 'An unexpected error occurred.',
       });
     } finally {
-      setJoiningId(null);
+      setIsProcessing(false);
     }
   };
+
+  const isFull = tournament.playerCount >= tournament.maxPlayers;
+
+  const renderFooter = () => {
+    if (isPlayerLoading) {
+      return (
+        <Button className="w-full" disabled>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading...
+        </Button>
+      );
+    }
+
+    if (hasJoined) {
+      return (
+        <Button className="w-full" variant="outline" disabled>Joined</Button>
+      );
+    }
+
+    if (tournament.state === 'published') {
+      if (isFull) {
+        return (
+          <Button className="w-full" disabled>Tournament Full</Button>
+        );
+      }
+      return (
+        <Button
+          className="w-full"
+          onClick={handleJoinTournament}
+          disabled={isProcessing}
+        >
+          {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isProcessing ? 'Joining...' : 'Join Tournament'}
+        </Button>
+      );
+    }
+
+    if (tournament.state === 'live') {
+      return (
+        <Button className="w-full" variant="secondary" disabled>
+          Live Now
+        </Button>
+      );
+    }
+    
+    return null;
+  };
+
+  return (
+    <Card className="flex flex-col">
+      <CardHeader>
+         <div className="flex justify-between items-start">
+          <CardTitle>{tournament.name}</CardTitle>
+          <Badge variant={tournament.state === 'live' ? 'destructive' : 'default'}>
+            {tournament.state.charAt(0).toUpperCase() + tournament.state.slice(1)}
+          </Badge>
+        </div>
+        <CardDescription className="flex items-center gap-1 text-sm">
+            {formatTimeControl(tournament.timeControl)} Blitz
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex-grow space-y-4">
+         <div className="flex items-center text-muted-foreground">
+          <Clock className="mr-2 h-4 w-4" />
+          <span>{format(tournament.startTime.toDate(), 'MMM d, h:mm a')}</span>
+        </div>
+        <div className="flex items-center text-muted-foreground">
+          <Users className="mr-2 h-4 w-4" />
+          <span>{tournament.playerCount} / {tournament.maxPlayers} players</span>
+        </div>
+      </CardContent>
+      <CardFooter>
+        {renderFooter()}
+      </CardFooter>
+    </Card>
+  );
+}
+
+
+export default function TournamentsPage() {
+  const firestore = useFirestore();
+
+  const tournamentsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'tournaments'), orderBy('startTime', 'asc'));
+  }, [firestore]);
+
+  const { data: allTournaments, isLoading: areTournamentsLoading } = useCollection<Tournament>(tournamentsQuery);
+
+  const visibleTournaments = useMemo(() => {
+    return allTournaments?.filter(t => t.state === 'published' || t.state === 'live') || [];
+  }, [allTournaments]);
   
-  const renderTournamentCard = (tournament: Tournament) => {
-    const isJoining = joiningId === tournament.id;
-    const canJoin = tournament.state === 'published' && tournament.playerCount < tournament.maxPlayers;
-
-    return (
-        <Card key={tournament.id} className="flex flex-col">
-          <CardHeader>
-             <div className="flex justify-between items-start">
-              <CardTitle>{tournament.name}</CardTitle>
-              <Badge variant={tournament.state === 'live' ? 'destructive' : 'default'}>
-                {tournament.state.charAt(0).toUpperCase() + tournament.state.slice(1)}
-              </Badge>
-            </div>
-            <CardDescription className="flex items-center gap-1 text-sm">
-                {formatTimeControl(tournament.timeControl)} Blitz
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-grow space-y-4">
-             <div className="flex items-center text-muted-foreground">
-              <Clock className="mr-2 h-4 w-4" />
-              <span>{format(tournament.startTime.toDate(), 'MMM d, h:mm a')}</span>
-            </div>
-            <div className="flex items-center text-muted-foreground">
-              <Users className="mr-2 h-4 w-4" />
-              <span>{tournament.playerCount} / {tournament.maxPlayers} players</span>
-            </div>
-          </CardContent>
-          <CardFooter>
-            {canJoin && (
-              <Button 
-                className="w-full"
-                onClick={() => handleJoinTournament(tournament.id)}
-                disabled={isJoining}
-              >
-                {isJoining && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isJoining ? 'Joining...' : 'Join Tournament'}
-              </Button>
-            )}
-             {tournament.state === 'live' && (
-              <Button className="w-full" variant="secondary" disabled>
-                Live Now
-              </Button>
-            )}
-          </CardFooter>
-        </Card>
-    );
-  }
-
   const renderSkeletonCard = (key: number) => (
     <Card key={key} className="flex flex-col">
       <CardHeader>
@@ -162,7 +204,9 @@ export default function TournamentsPage() {
       
       {!areTournamentsLoading && visibleTournaments.length > 0 && (
          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {visibleTournaments.map(renderTournamentCard)}
+            {visibleTournaments.map(tournament => (
+                <TournamentCard key={tournament.id} tournament={tournament} />
+            ))}
         </div>
       )}
     </div>
