@@ -72,56 +72,6 @@ export default function HistoryPage() {
 
   const isLoading = authLoading || (authUser && (isLoadingP1 || isLoadingP2));
 
-  // Main loading state while checking for user authentication
-  if (authLoading) {
-    return (
-      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Game History</CardTitle>
-            <CardDescription>Review your past matches and analyze your performance.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Opponent</TableHead>
-                    <TableHead className="text-center">Result</TableHead>
-                    <TableHead className="text-center">ELO Change</TableHead>
-                    <TableHead className="text-right">Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {Array.from({ length: 5 }).map((_, i) => renderSkeletonRow(i))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // State for unauthenticated users
-  if (!authUser) {
-    return (
-      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Game History</CardTitle>
-            <CardDescription>Review your past matches and analyze your performance.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center text-muted-foreground py-12">
-              Please sign in to view your game history.
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const renderGameRow = (game: Game) => {
     if (!authUser) return null;
 
@@ -201,6 +151,56 @@ export default function HistoryPage() {
       <TableCell className="text-right"><Skeleton className="h-5 w-24 ml-auto" /></TableCell>
     </TableRow>
   );
+
+  // Main loading state while checking for user authentication
+  if (authLoading) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Game History</CardTitle>
+            <CardDescription>Review your past matches and analyze your performance.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Opponent</TableHead>
+                    <TableHead className="text-center">Result</TableHead>
+                    <TableHead className="text-center">ELO Change</TableHead>
+                    <TableHead className="text-right">Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 5 }).map((_, i) => renderSkeletonRow(i))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // State for unauthenticated users
+  if (!authUser) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Game History</CardTitle>
+            <CardDescription>Review your past matches and analyze your performance.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center text-muted-foreground py-12">
+              Please sign in to view your game history.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
