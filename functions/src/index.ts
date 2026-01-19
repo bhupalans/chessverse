@@ -270,7 +270,7 @@ function getBotMove(game: Chess, difficulty: string): string | null {
 
 // --- TOURNAMENT LOGIC ---
 
-async function startTournamentArena(tournamentId: string) {
+async function pairAndCreateMatches(tournamentId: string) {
     console.log(`Starting pairing for tournament: ${tournamentId}`);
     const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
     const tournamentDoc = await tournamentRef.get();
@@ -282,9 +282,9 @@ async function startTournamentArena(tournamentId: string) {
     }
 
     const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
-    const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('eloRating', 'desc').get();
+    const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('score', 'desc').get();
 
-    if (playersSnapshot.empty) {
+    if (playersSnapshot.docs.length < 2) {
         console.log(`No available players to pair in tournament ${tournamentId}.`);
         return;
     }
@@ -310,17 +310,6 @@ async function startTournamentArena(tournamentId: string) {
             pairings.push([player, bestMatch]);
             pairedIds.add(player.id);
             pairedIds.add(bestMatch.id);
-        }
-    }
-
-    if (pairedIds.size < availablePlayers.length) {
-        const unpairedPlayer = availablePlayers.find(p => !pairedIds.has(p.id));
-        if (unpairedPlayer) {
-            console.log(`Player ${unpairedPlayer.username} gets a bye.`);
-            await playersRef.doc(unpairedPlayer.id).update({
-                score: admin.firestore.FieldValue.increment(1),
-                gamesPlayed: admin.firestore.FieldValue.increment(1)
-            });
         }
     }
 
@@ -641,7 +630,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
           .commit();
   
         console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
-        await startTournamentArena(tournamentId);
+        await pairAndCreateMatches(tournamentId);
       }
   
       return null;
@@ -1136,7 +1125,7 @@ export const onTournamentStateChange = functions.firestore
         // locked -> live (Tournament actually starts here)
         if (before.state === 'locked' && after.state === 'live') {
             console.log(`Tournament ${tournamentId} is now live. Initiating pairings.`);
-            await startTournamentArena(tournamentId);
+            await pairAndCreateMatches(tournamentId);
         }
         
         // live -> completed (Finalize results)

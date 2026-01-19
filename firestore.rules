@@ -144,48 +144,69 @@ service cloud.firestore {
     }
 
     /**
-     * @description Defines access control for game documents. Games are publicly readable
-     * to populate the lobby. Creating a game is allowed for any signed-in user.
-     * Updating a game is restricted to the players in that game or by server-side functions.
-     */
-    match /games/{gameId} {
-      // Any authenticated user can read or list games for the lobby.
-      allow read, list: if isSignedIn();
-      
-      // Any authenticated user can create a valid new game.
-      allow create: if isSignedIn() && isNewGameValid();
+ * @description Defines access control for game documents.
+ * Games are readable/listable by any signed-in user (required for lobby + history).
+ * Writes remain strictly controlled.
+ */
+match /games/{gameId} {
 
-      // Updates are allowed if it's a valid player action (joining, offering draw)
-      // OR if it's a server action completing the game.
-      allow update: if (isSignedIn() && isPlayer(resource) && (isGameJoinValid() || isGameUpdateValid()))
-                       || isServerGameOutcomeUpdate();
-      
-      // Only a player can delete a game they are in (e.g. declining an invite).
-      allow delete: if isSignedIn() && isPlayer(resource);
-    }
+  // ✅ REQUIRED: allow LIST queries for history + lobby
+  allow list: if isSignedIn();
+
+  // ✅ Allow reading individual game docs
+  allow get: if isSignedIn();
+
+  // ✅ Any authenticated user can create a valid new game
+  allow create: if isSignedIn() && isNewGameValid();
+
+  // ✅ Updates allowed only for players OR server
+  allow update: if (
+      isSignedIn()
+      && isPlayer(resource)
+      && (isGameJoinValid() || isGameUpdateValid())
+    )
+    || isServerGameOutcomeUpdate();
+
+  // 🔒 Delete restricted (do NOT block list evaluation)
+  allow delete: if false;
+}
+
     
-    /**
-     * @description Defines access control for tournament documents. Tournaments are
-     * publicly readable for the lobby. Writing is restricted to the server.
-     */
-    match /tournaments/{tournamentId} {
-      // Allow any authenticated user to see the list of tournaments.
-      allow read, list: if isSignedIn();
-      
-      // ONLY allow the server (Cloud Functions) to create, update, or delete tournaments.
-      allow write: if isServer();
+match /tournaments/{tournamentId} {
 
-      /**
-       * @description Defines access control for players within a tournament. Player lists
-       * are readable for UI purposes. Writes are restricted to the server.
-       */
-      match /players/{playerId} {
-        // Allow any authenticated user to read the list of players in a tournament.
-        allow read, list: if isSignedIn();
+  // -------------------------
+  // READ ACCESS
+  // -------------------------
 
-        // ONLY allow the server to add, update, or remove players from a tournament.
-        allow write: if isServer();
-      }
-    }
+  // Admins can read ALL tournaments (any state)
+  allow get, list: if request.auth != null
+    && request.auth.token.admin == true;
+
+  // Any signed-in user can LIST tournaments
+  // (visibility enforced at document level below)
+  allow list: if isSignedIn();
+
+  // Players can GET only published or live tournaments
+  allow get: if isSignedIn()
+    && resource.data.state in ["published", "live"];
+
+  // -------------------------
+  // WRITE ACCESS
+  // -------------------------
+
+  // ONLY allow the server to write tournaments
+  allow create, update, delete: if isServer();
+
+  // -------------------------
+  // PLAYERS SUBCOLLECTION
+  // -------------------------
+
+  match /players/{playerId} {
+    allow read, list: if isSignedIn();
+    allow write: if isServer();
+  }
+}
+
+
   }
 }
