@@ -1,105 +1,82 @@
 'use client';
 
-import { useFirebase, useCollection, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import {
   collection,
   query,
   where,
   orderBy,
+  Query,
+  DocumentData,
 } from 'firebase/firestore';
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { format } from 'date-fns';
-import { useMemo } from 'react';
-import type { Game } from '@/lib/types';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { Game, Player } from '@/lib/types';
 
 export default function HistoryPage() {
-  const { user: authUser, isUserLoading: authLoading, firestore } = useFirebase();
+  const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
 
-  const gamesAsPlayer1Query = useMemoFirebase(() => {
-    if (!firestore || !authUser) return null;
-    return query(
-      collection(firestore, 'games'),
-      where('player1Id', '==', authUser.uid),
-      where('status', '==', 'completed'),
-      orderBy('completedAt', 'desc')
-    );
-  }, [firestore, authUser]);
-
-  const gamesAsPlayer2Query = useMemoFirebase(() => {
-    if (!firestore || !authUser) return null;
-    return query(
-      collection(firestore, 'games'),
-      where('player2Id', '==', authUser.uid),
-      where('status', '==', 'completed'),
-      orderBy('completedAt', 'desc')
-    );
-  }, [firestore, authUser]);
-
-  const { data: gamesAsP1, isLoading: isLoadingP1 } = useCollection<Game>(gamesAsPlayer1Query);
-  const { data: gamesAsP2, isLoading: isLoadingP2 } = useCollection<Game>(gamesAsPlayer2Query);
-
-  const myGames = useMemo(() => {
-    if (!gamesAsP1 && !gamesAsP2) return null;
-
-    const allGames = [
-      ...(gamesAsP1 || []),
-      ...(gamesAsP2 || []),
-    ];
-
-    const uniqueGames = Array.from(new Map(allGames.map(game => [game.id, game])).values());
-
-    uniqueGames.sort((a, b) => {
-      const timeA = a.completedAt?.seconds || 0;
-      const timeB = b.completedAt?.seconds || 0;
-      return timeB - timeA;
-    });
-
-    return uniqueGames;
-  }, [gamesAsP1, gamesAsP2]);
-
-  const isLoading = authLoading || (authUser && (isLoadingP1 || isLoadingP2));
+  // Helper functions defined at the top
+  const renderSkeletonRow = (key: number) => (
+    <TableRow key={`skeleton-${key}`}>
+      <TableCell>
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="space-y-1">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="text-center">
+        <Skeleton className="h-6 w-16 mx-auto" />
+      </TableCell>
+      <TableCell className="text-center">
+        <Skeleton className="h-4 w-12 mx-auto" />
+      </TableCell>
+      <TableCell className="text-right">
+        <Skeleton className="h-4 w-24 ml-auto" />
+      </TableCell>
+    </TableRow>
+  );
 
   const renderGameRow = (game: Game) => {
-    if (!authUser) return null;
+    if (!user) return null;
 
-    const isPlayer1 = game.player1.id === authUser.uid;
+    const isPlayer1 = game.player1.id === user.uid;
     const opponent = isPlayer1 ? game.player2 : game.player1;
     const myColor = isPlayer1 ? game.player1Color : game.player2Color;
-    const myEloBefore = myColor === 'w' ? game.whiteEloBefore : game.blackEloBefore;
-    const myEloAfter = myColor === 'w' ? game.whiteEloAfter : game.blackEloAfter;
 
     let result: 'Win' | 'Loss' | 'Draw' = 'Draw';
-    let resultVariant: 'default' | 'destructive' | 'secondary' = 'secondary';
-    
     if (game.winnerId && game.winnerId !== 'd') {
       const iAmWinner = (myColor === 'w' && game.winnerId === 'w') || (myColor === 'b' && game.winnerId === 'b');
-      if (iAmWinner) {
-        result = 'Win';
-        resultVariant = 'default';
-      } else {
-        result = 'Loss';
-        resultVariant = 'destructive';
-      }
+      result = iAmWinner ? 'Win' : 'Loss';
     }
 
-    const eloChange = (myEloAfter && myEloBefore) ? myEloAfter - myEloBefore : 0;
-    const eloChangeFormatted = eloChange > 0 ? `+${eloChange}` : `${eloChange}`;
+    let eloChange = 0;
+    if(typeof game.whiteEloAfter === 'number' && typeof game.whiteEloBefore === 'number' && typeof game.blackEloAfter === 'number' && typeof game.blackEloBefore === 'number') {
+        eloChange = myColor === 'w' ? game.whiteEloAfter - game.whiteEloBefore : game.blackEloAfter - game.blackEloBefore;
+    }
 
     return (
       <TableRow key={game.id}>
         <TableCell>
           <div className="flex items-center gap-3">
-            <Avatar>
-              <AvatarImage src={opponent?.avatarUrl || PlaceHolderImages.find(p => p.id === 'user2')?.imageUrl} />
-              <AvatarFallback>
-                {opponent?.username?.[0] ?? '?'}
-              </AvatarFallback>
+            <Avatar className="h-9 w-9">
+              <AvatarFallback>{opponent?.username?.[0] ?? '?'}</AvatarFallback>
             </Avatar>
             <div>
               <div className="font-medium">{opponent?.username ?? 'Unknown'}</div>
@@ -108,18 +85,23 @@ export default function HistoryPage() {
           </div>
         </TableCell>
         <TableCell className="text-center">
-          <Badge variant={resultVariant}>
+          <Badge
+            variant={
+              result === 'Win'
+                ? 'default'
+                : result === 'Loss'
+                ? 'destructive'
+                : 'secondary'
+            }
+            className={result === 'Win' ? 'bg-green-600/80' : ''}
+          >
             {result}
           </Badge>
         </TableCell>
-        <TableCell className={cn(
-          "text-center font-medium",
-          eloChange > 0 && "text-green-500",
-          eloChange < 0 && "text-destructive"
-        )}>
-          {game.eloProcessed ? eloChangeFormatted : 'N/A'}
+        <TableCell className={`text-center font-medium ${eloChange > 0 ? 'text-green-500' : eloChange < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+          {eloChange > 0 ? `+${eloChange}` : eloChange}
         </TableCell>
-        <TableCell className="text-right text-muted-foreground">
+        <TableCell className="text-right text-sm text-muted-foreground">
           {game.completedAt
             ? format(new Date(game.completedAt.seconds * 1000), 'MMM d, yyyy')
             : '—'}
@@ -127,27 +109,39 @@ export default function HistoryPage() {
       </TableRow>
     );
   };
-  
-  const renderSkeletonRow = (key: number) => (
-    <TableRow key={`skeleton-${key}`}>
-      <TableCell>
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-10 w-10 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-3 w-16" />
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className="text-center"><Skeleton className="h-6 w-16 mx-auto" /></TableCell>
-      <TableCell className="text-center"><Skeleton className="h-5 w-10 mx-auto" /></TableCell>
-      <TableCell className="text-right"><Skeleton className="h-5 w-24 ml-auto" /></TableCell>
-    </TableRow>
-  );
 
-  if (authLoading) {
+  const gamesAsPlayer1Query = useMemoFirebase(() => {
+    if (!firestore || !user?.uid) return null;
+    return query(
+      collection(firestore, 'games'),
+      where('status', '==', 'completed'),
+      where('player1Id', '==', user.uid),
+      orderBy('completedAt', 'desc')
+    );
+  }, [firestore, user?.uid]);
+
+  const gamesAsPlayer2Query = useMemoFirebase(() => {
+    if (!firestore || !user?.uid) return null;
+    return query(
+      collection(firestore, 'games'),
+      where('status', '==', 'completed'),
+      where('player2Id', '==', user.uid),
+      orderBy('completedAt', 'desc')
+    );
+  }, [firestore, user?.uid]);
+
+  const { data: gamesAsPlayer1, isLoading: isP1Loading } = useCollection<Game>(gamesAsPlayer1Query);
+  const { data: gamesAsPlayer2, isLoading: isP2Loading } = useCollection<Game>(gamesAsPlayer2Query);
+
+  const mergedGames = useMemo(() => {
+    const allGames = [...(gamesAsPlayer1 || []), ...(gamesAsPlayer2 || [])];
+    const uniqueGames = Array.from(new Map(allGames.map(game => [game.id, game])).values());
+    return uniqueGames.sort((a, b) => b.completedAt.seconds - a.completedAt.seconds);
+  }, [gamesAsPlayer1, gamesAsPlayer2]);
+
+  if (isUserLoading) {
     return (
-      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+      <div className="container mx-auto p-6 lg:p-8">
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Game History</CardTitle>
@@ -175,31 +169,24 @@ export default function HistoryPage() {
     );
   }
 
-  if (!authUser) {
+  if (!user) {
     return (
-      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Game History</CardTitle>
-            <CardDescription>Review your past matches and analyze your performance.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center text-muted-foreground py-12">
-              Please sign in to view your game history.
-            </div>
-          </CardContent>
-        </Card>
+      <div className="container mx-auto p-8 text-center text-muted-foreground">
+        Please sign in to view your game history.
       </div>
     );
   }
 
+  const isLoading = isP1Loading || isP2Loading;
+
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+    <div className="container mx-auto p-6 lg:p-8">
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Game History</CardTitle>
           <CardDescription>Review your past matches and analyze your performance.</CardDescription>
         </CardHeader>
+
         <CardContent>
           <div className="rounded-lg border">
             <Table>
@@ -213,16 +200,14 @@ export default function HistoryPage() {
               </TableHeader>
               <TableBody>
                 {isLoading && Array.from({ length: 5 }).map((_, i) => renderSkeletonRow(i))}
-                
-                {!isLoading && myGames && myGames.length > 0 && myGames.map(renderGameRow)}
-
-                {!isLoading && (!myGames || myGames.length === 0) && (
+                {!isLoading && mergedGames.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-24 text-center">
-                      You have no completed games yet.
+                    <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
+                      No completed games yet.
                     </TableCell>
                   </TableRow>
                 )}
+                {!isLoading && mergedGames.map(renderGameRow)}
               </TableBody>
             </Table>
           </div>
