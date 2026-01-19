@@ -29,12 +29,22 @@ function TournamentDetailsClient() {
     return doc(firestore, 'tournaments', tournamentId);
   }, [firestore, tournamentId]);
 
-  const playersQuery = useMemoFirebase(() => {
-    if (!firestore || !tournamentId) return null;
-    return query(collection(firestore, 'tournaments', tournamentId, 'players'), orderBy('score', 'desc'));
-  }, [firestore, tournamentId]);
-
   const { data: tournament, isLoading: isTournamentLoading } = useDoc<Tournament>(tournamentRef);
+
+  const playersQuery = useMemoFirebase(() => {
+    if (!firestore || !tournamentId || !tournament) return null;
+    
+    const playersCollection = collection(firestore, 'tournaments', tournamentId, 'players');
+
+    // For draft/published tournaments, show players by join order.
+    // For all other states, show by score for standings.
+    if (tournament.state === 'draft' || tournament.state === 'published') {
+        return query(playersCollection, orderBy('joinedAt', 'asc'));
+    }
+    
+    return query(playersCollection, orderBy('score', 'desc'));
+  }, [firestore, tournamentId, tournament]);
+
   const { data: players, isLoading: arePlayersLoading } = useCollection<TournamentPlayer>(playersQuery);
 
   if (isTournamentLoading) {
@@ -48,6 +58,8 @@ function TournamentDetailsClient() {
       </div>
     );
   }
+  
+  const isPreTournament = tournament.state === 'draft' || tournament.state === 'published';
 
   return (
     <div className="space-y-6">
@@ -57,7 +69,7 @@ function TournamentDetailsClient() {
             <div>
               <CardTitle className="text-3xl">{tournament.name}</CardTitle>
               <CardDescription>
-                Created at: {format(tournament.createdAt.toDate(), 'PPpp')}
+                Created at: {tournament.createdAt ? format(tournament.createdAt.toDate(), 'PPpp') : 'N/A'}
               </CardDescription>
             </div>
             <div className="flex items-center gap-4">
@@ -71,7 +83,7 @@ function TournamentDetailsClient() {
         <CardContent className="grid md:grid-cols-3 gap-4">
             <div className="flex flex-col space-y-1">
                 <span className="text-sm font-medium text-muted-foreground">Start Time</span>
-                <span>{format(tournament.startTime.toDate(), 'PPpp')}</span>
+                <span>{tournament.startTime ? format(tournament.startTime.toDate(), 'PPpp') : 'N/A'}</span>
             </div>
              <div className="flex flex-col space-y-1">
                 <span className="text-sm font-medium text-muted-foreground">Players</span>
@@ -88,7 +100,7 @@ function TournamentDetailsClient() {
         <CardHeader>
             <CardTitle>Players</CardTitle>
             <CardDescription>
-                {tournament.state === 'completed' || tournament.state === 'archived' ? 'Final Standings' : 'Current Players'}
+                {tournament.state === 'completed' || tournament.state === 'archived' ? 'Final Standings' : (isPreTournament ? 'Players Joined' : 'Current Standings')}
             </CardDescription>
         </CardHeader>
         <CardContent>
@@ -96,42 +108,91 @@ function TournamentDetailsClient() {
                  <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="w-[50px]">Rank</TableHead>
-                            <TableHead>Player</TableHead>
-                            <TableHead className="text-center">ELO</TableHead>
-                            <TableHead className="text-center">Score</TableHead>
-                            <TableHead className="text-center">Games</TableHead>
+                            {isPreTournament ? (
+                                <>
+                                    <TableHead>Player</TableHead>
+                                    <TableHead className="text-center">ELO</TableHead>
+                                    <TableHead className="text-right">Joined At</TableHead>
+                                </>
+                            ) : (
+                                <>
+                                    <TableHead className="w-[50px]">Rank</TableHead>
+                                    <TableHead>Player</TableHead>
+                                    <TableHead className="text-center">ELO</TableHead>
+                                    <TableHead className="text-center">Score</TableHead>
+                                    <TableHead className="text-center">Games</TableHead>
+                                </>
+                            )}
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {arePlayersLoading && Array.from({length: 5}).map((_, i) => (
                              <TableRow key={i}>
-                                <TableCell><Skeleton className="h-5 w-5 mx-auto" /></TableCell>
-                                <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                                <TableCell><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
-                                <TableCell><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
-                                <TableCell><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
+                                {isPreTournament ? (
+                                    <>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Skeleton className="h-6 w-6 rounded-full" />
+                                                <Skeleton className="h-5 w-32" />
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center"><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
+                                        <TableCell className="text-right"><Skeleton className="h-5 w-40 ml-auto" /></TableCell>
+                                    </>
+                                ) : (
+                                    <>
+                                        <TableCell><Skeleton className="h-5 w-5 mx-auto" /></TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Skeleton className="h-6 w-6 rounded-full" />
+                                                <Skeleton className="h-5 w-32" />
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center"><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
+                                        <TableCell className="text-center"><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
+                                        <TableCell className="text-center"><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
+                                    </>
+                                )}
                              </TableRow>
                         ))}
                         {!arePlayersLoading && players?.map((player, index) => (
                             <TableRow key={player.id}>
-                                <TableCell className="font-bold text-center">{index + 1}</TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-2">
-                                        <Avatar className="h-6 w-6">
-                                            <AvatarFallback>{player.username.charAt(0)}</AvatarFallback>
-                                        </Avatar>
-                                        {player.username}
-                                    </div>
-                                </TableCell>
-                                <TableCell className="text-center">{player.eloRating}</TableCell>
-                                <TableCell className="text-center font-semibold">{player.score}</TableCell>
-                                <TableCell className="text-center">{player.gamesPlayed}</TableCell>
+                                {isPreTournament ? (
+                                     <>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Avatar className="h-6 w-6">
+                                                    <AvatarFallback>{player.username.charAt(0)}</AvatarFallback>
+                                                </Avatar>
+                                                {player.username}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">{player.eloRating}</TableCell>
+                                        <TableCell className="text-right text-muted-foreground text-xs">
+                                            {player.joinedAt ? format(player.joinedAt.toDate(), 'P p') : 'N/A'}
+                                        </TableCell>
+                                    </>
+                                ) : (
+                                    <>
+                                        <TableCell className="font-bold text-center">{index + 1}</TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Avatar className="h-6 w-6">
+                                                    <AvatarFallback>{player.username.charAt(0)}</AvatarFallback>
+                                                </Avatar>
+                                                {player.username}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">{player.eloRating}</TableCell>
+                                        <TableCell className="text-center font-semibold">{player.score}</TableCell>
+                                        <TableCell className="text-center">{player.gamesPlayed}</TableCell>
+                                    </>
+                                )}
                             </TableRow>
                         ))}
                          {!arePlayersLoading && players?.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={5} className="text-center h-24">No players have joined yet.</TableCell>
+                                <TableCell colSpan={isPreTournament ? 3 : 5} className="text-center h-24">No players have joined yet.</TableCell>
                             </TableRow>
                         )}
                     </TableBody>
