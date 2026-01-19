@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useFirebase, useCollection, useMemoFirebase } from '@/firebase';
@@ -20,10 +19,8 @@ import { cn } from '@/lib/utils';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 export default function HistoryPage() {
-  // Use useFirebase() as requested, aliasing user and isUserLoading for clarity.
   const { user: authUser, isUserLoading: authLoading, firestore } = useFirebase();
 
-  // Query for games where the user is player1
   const gamesAsPlayer1Query = useMemoFirebase(() => {
     if (!firestore || !authUser) return null;
     return query(
@@ -34,7 +31,6 @@ export default function HistoryPage() {
     );
   }, [firestore, authUser]);
 
-  // Query for games where the user is player2
   const gamesAsPlayer2Query = useMemoFirebase(() => {
     if (!firestore || !authUser) return null;
     return query(
@@ -48,7 +44,6 @@ export default function HistoryPage() {
   const { data: gamesAsP1, isLoading: isLoadingP1 } = useCollection<Game>(gamesAsPlayer1Query);
   const { data: gamesAsP2, isLoading: isLoadingP2 } = useCollection<Game>(gamesAsPlayer2Query);
 
-  // Combine and sort the results from both queries
   const myGames = useMemo(() => {
     if (!gamesAsP1 && !gamesAsP2) return null;
 
@@ -57,10 +52,8 @@ export default function HistoryPage() {
       ...(gamesAsP2 || []),
     ];
 
-    // Deduplicate games in the rare case a user played against themselves
     const uniqueGames = Array.from(new Map(allGames.map(game => [game.id, game])).values());
 
-    // Sort the combined list by completion date
     uniqueGames.sort((a, b) => {
       const timeA = a.completedAt?.seconds || 0;
       const timeB = b.completedAt?.seconds || 0;
@@ -152,7 +145,6 @@ export default function HistoryPage() {
     </TableRow>
   );
 
-  // Main loading state while checking for user authentication
   if (authLoading) {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
@@ -183,7 +175,6 @@ export default function HistoryPage() {
     );
   }
 
-  // State for unauthenticated users
   if (!authUser) {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
