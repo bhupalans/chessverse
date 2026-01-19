@@ -323,7 +323,7 @@ async function pairAndCreateMatches(tournamentId: string) {
             player2: { id: player2.id, username: player2.username, eloRating: player2.eloRating },
             player1Color: player1.id === whitePlayer.id ? 'w' : 'b',
             player2Color: player2.id === whitePlayer.id ? 'w' : 'b',
-            status: 'inprogress',
+            status: 'pending',
             turn: 'w',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             timeControl: tournamentData.timeControl,
@@ -531,6 +531,56 @@ export const submitMove = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('internal', 'An internal error occurred while processing the move.');
     }
 });
+
+export const onPlayerReady = functions.database
+  .ref('/gameLobbies/{gameId}')
+  .onWrite(async (change, context) => {
+    const { gameId } = context.params;
+    const lobbyData = change.after.val();
+
+    // Lobby is empty or removed, do nothing.
+    if (!lobbyData) {
+      return null;
+    }
+
+    const readyPlayers = Object.keys(lobbyData);
+    
+    // Check if we have two ready players.
+    if (readyPlayers.length === 2) {
+      const gameRef = firestore.collection('games').doc(gameId);
+
+      try {
+        await firestore.runTransaction(async (transaction) => {
+          const gameDoc = await transaction.get(gameRef);
+          
+          if (!gameDoc.exists) {
+            console.log(`Game ${gameId} not found for lobby trigger.`);
+            return;
+          }
+
+          const gameData = gameDoc.data()!;
+
+          // Only proceed if the game is in 'pending' state.
+          if (gameData.status === 'pending') {
+            console.log(`Both players ready for game ${gameId}. Starting game.`);
+            transaction.update(gameRef, { 
+                status: 'inprogress',
+                startTime: admin.firestore.FieldValue.serverTimestamp() // Set official start time
+            });
+          }
+        });
+        
+        // Clean up the lobby in RTDB after successfully starting the game.
+        await change.after.ref.remove();
+
+      } catch (error) {
+        console.error(`Error starting game ${gameId} from lobby:`, error);
+        // Clean up lobby even if transaction fails to prevent orphans
+        await change.after.ref.remove();
+      }
+    }
+    return null;
+  });
 
     export const onGameWrite = functions.firestore
     .document('/games/{gameId}')

@@ -21,7 +21,7 @@ export type User = {
   lastSeen?: Timestamp;
 };
 
-export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed';
+export type GameStatus = 'invited' | 'waiting' | 'inprogress' | 'completed' | 'pending';
 
 export type LastMove = {
   from: string;
@@ -64,6 +64,7 @@ export type Game = {
   reason?: 'checkmate' | 'resign' | 'draw' | 'stalemate' | 'timeout' | 'abort' | 'abandoned';
   timeControl: TimeControl;
   createdAt: Timestamp;
+  startTime?: Timestamp;
   completedAt?: Timestamp;
   whiteEloBefore?: number;
   blackEloBefore?: number;

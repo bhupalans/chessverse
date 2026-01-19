@@ -8,13 +8,13 @@ import { Chess, type Square as ChessJsSquare, type Color } from 'chess.js';
 import { useToast } from '@/hooks/use-toast';
 import { PlayerCard } from '@/components/game/player-card';
 import { Button } from '@/components/ui/button';
-import { Flag, Swords, Crown, Handshake, WifiOff } from 'lucide-react';
+import { Flag, Swords, Crown, Handshake, WifiOff, Loader2 } from 'lucide-react';
 import { ThemeSelector } from '@/components/game/theme-selector';
 import { useUser, useRealtimeDB, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import type { User as UserType, Game as GameType, LastMove, LiveGame } from '@/lib/types';
 import { Chessboard } from '@/components/game/chessboard';
 import { ChessPieces } from '@/components/game/chess-pieces';
-import { ref, onValue, get, set, serverTimestamp as rtdbServerTimestamp } from 'firebase/database';
+import { ref, onValue, get, set, serverTimestamp as rtdbServerTimestamp, remove, onDisconnect } from 'firebase/database';
 import { doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -190,6 +190,28 @@ function GamePageContent() {
 
     return () => clearInterval(interval);
   }, [liveGameState, finalGameOver, firestoreGame]);
+  
+  // Player readiness for tournament games
+  useEffect(() => {
+    if (!realtimeDB || !user || !gameId || !firestoreGame || firestoreGame.status !== 'pending' || !firestoreGame.isTournamentGame) {
+      return;
+    }
+
+    const lobbyPlayerRef = ref(realtimeDB, `/gameLobbies/${gameId}/${user.uid}`);
+    
+    // Signal that the player is ready
+    set(lobbyPlayerRef, true);
+    
+    const onDisconnectRef = onDisconnect(lobbyPlayerRef);
+    onDisconnectRef.remove();
+
+    // Cleanup when component unmounts or dependencies change
+    return () => {
+      onDisconnectRef.cancel(); // Remove the onDisconnect handler
+      remove(lobbyPlayerRef).catch(err => console.error("Error removing readiness flag on cleanup", err));   // Proactively remove the readiness flag
+    };
+
+  }, [realtimeDB, user, gameId, firestoreGame]);
 
   const myColor = useMemo<'w' | 'b' | null>(() => {
     if (!user || !firestoreGame) return null;
@@ -430,6 +452,22 @@ function GamePageContent() {
       </div>
     );
   };
+  
+    const renderPendingGame = () => {
+    if (firestoreGame?.status !== 'pending' || !firestoreGame.isTournamentGame) {
+        return null;
+    }
+    
+    return (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg z-20">
+            <div className="text-center text-white p-8 rounded-lg">
+                <Loader2 className="w-16 h-16 text-white animate-spin mx-auto" />
+                <h2 className="text-2xl font-bold mt-4">Game Starting</h2>
+                <p className="text-lg mt-1">Waiting for opponent to connect...</p>
+            </div>
+        </div>
+    );
+  };
 
 
   return (
@@ -464,6 +502,7 @@ function GamePageContent() {
                 />
             </Chessboard>
             {renderGameOver()}
+            {renderPendingGame()}
             {!finalGameOver && firestoreGame?.status === 'waiting' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg z-20">
                     <div className="text-white text-lg text-center p-4">
