@@ -961,7 +961,7 @@ export const joinTournament = functions.https.onCall(async (data, context) => {
                 throw new functions.https.HttpsError('failed-precondition', `Tournament is not open for registration. Current state: ${tournament.state}.`);
             }
             if (playerDoc.exists) {
-                throw new functions.https.HttpsError('already-exists', 'You have already joined this tournament.');
+                throw new functions.https.HttpsError('already-exists', 'User already joined tournament');
             }
             if (tournament.playerCount >= tournament.maxPlayers) {
                 throw new functions.https.HttpsError('failed-precondition', 'Tournament is full.');
