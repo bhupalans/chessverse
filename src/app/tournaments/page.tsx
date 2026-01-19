@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { collection, query, orderBy, doc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore, useCollection, useUser, useMemoFirebase, useDoc } from '@/firebase';
@@ -10,8 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Users, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
-import type { Tournament, TimeControl } from '@/lib/types';
+import type { Tournament, TimeControl, TournamentPlayer } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useRouter } from 'next/navigation';
 
 const formatTimeControl = (tc: TimeControl) => {
     if (!tc) return 'N/A';
@@ -24,6 +25,7 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
   const { user } = useUser();
   const firestore = useFirestore();
   const { toast } = useToast();
+  const router = useRouter();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const playerDocRef = useMemoFirebase(() => {
@@ -31,7 +33,17 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
     return doc(firestore, 'tournaments', tournament.id, 'players', user.uid);
   }, [firestore, user, tournament.id]);
 
-  const { data: playerDoc, isLoading: isPlayerLoading } = useDoc(playerDocRef);
+  const { data: playerDoc, isLoading: isPlayerLoading } = useDoc<TournamentPlayer>(playerDocRef);
+  
+  useEffect(() => {
+    if (playerDoc?.activeGameId) {
+        toast({
+            title: 'Game Ready!',
+            description: 'You are being redirected to your tournament game.',
+        });
+        router.push(`/game/${playerDoc.activeGameId}`);
+    }
+  }, [playerDoc, router, toast]);
 
   const hasJoined = !!playerDoc;
 
@@ -76,8 +88,16 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
         </Button>
       );
     }
-
+    
     if (hasJoined) {
+        if (playerDoc?.activeGameId) {
+            return (
+                <Button className="w-full" disabled>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Joining game...
+                </Button>
+            );
+        }
       return (
         <Button className="w-full" variant="outline" disabled>Joined</Button>
       );
@@ -102,11 +122,8 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
     }
 
     if (tournament.state === 'live') {
-      return (
-        <Button className="w-full" variant="secondary" disabled>
-          Live Now
-        </Button>
-      );
+      // If user hasn't joined a live tournament, don't show any action
+      return null;
     }
     
     return null;
