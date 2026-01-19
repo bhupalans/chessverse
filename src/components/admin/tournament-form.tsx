@@ -39,7 +39,7 @@ const formSchema = z.object({
   timeControl: z.string().min(1, 'Time control is required'),
   startTime: z.date({ required_error: 'A start date is required.' }),
   durationMinutes: z.coerce.number().min(5, 'Duration must be at least 5 minutes.'),
-  maxPlayers: z.coerce.number().min(4, 'Must have at least 4 players.'),
+  maxPlayers: z.coerce.number().min(3, 'Must have at least 4 players.'),
 });
 
 export type TournamentFormValues = z.infer<typeof formSchema>;

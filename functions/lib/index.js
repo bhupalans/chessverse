@@ -247,7 +247,7 @@ async function pairAndCreateMatches(tournamentId) {
     }
     const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
     const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('score', 'desc').get();
-    if (playersSnapshot.empty) {
+    if (playersSnapshot.docs.length < 2) {
         console.log(`No available players to pair in tournament ${tournamentId}.`);
         return;
     }
@@ -270,16 +270,6 @@ async function pairAndCreateMatches(tournamentId) {
             pairings.push([player, bestMatch]);
             pairedIds.add(player.id);
             pairedIds.add(bestMatch.id);
-        }
-    }
-    if (pairedIds.size < availablePlayers.length) {
-        const unpairedPlayer = availablePlayers.find(p => !pairedIds.has(p.id));
-        if (unpairedPlayer) {
-            console.log(`Player ${unpairedPlayer.username} gets a bye.`);
-            await playersRef.doc(unpairedPlayer.id).update({
-                score: admin.firestore.FieldValue.increment(1),
-                gamesPlayed: admin.firestore.FieldValue.increment(1)
-            });
         }
     }
     if (pairings.length === 0) {
@@ -526,7 +516,7 @@ exports.onGameWrite = functions.firestore
     if ((beforeData === null || beforeData === void 0 ? void 0 : beforeData.status) === 'inprogress' &&
         (afterData === null || afterData === void 0 ? void 0 : afterData.status) === 'completed' &&
         afterData.isTournamentGame) {
-        console.log(`Tournament game ${gameId} completed.`);
+        console.log(`Tournament game ${gameId} completed. Releasing players.`);
         const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
         if (!tournamentId)
             return null;
@@ -565,8 +555,6 @@ exports.onGameWrite = functions.firestore
             activeGameId: null
         })
             .commit();
-        console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
-        await pairAndCreateMatches(tournamentId);
     }
     return null;
 });
