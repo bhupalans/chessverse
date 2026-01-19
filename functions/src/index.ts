@@ -275,7 +275,7 @@ async function pairAndCreateMatches(tournamentId: string) {
     const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
     const tournamentDoc = await tournamentRef.get();
     const tournamentData = tournamentDoc.data() as Tournament;
-    
+
     if (tournamentData.state !== 'live') {
         console.log(`Tournament ${tournamentId} is not in 'live' state. Halting pairing.`);
         return;
@@ -351,6 +351,7 @@ async function pairAndCreateMatches(tournamentId: string) {
 
     await batch.commit();
 }
+
 
 async function validateTournamentForStart(tournamentId: string, tournamentData: Tournament): Promise<{ isValid: boolean, error?: string }> {
     const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
@@ -582,7 +583,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
         afterData?.status === 'completed' &&
         afterData.isTournamentGame
       ) {
-        console.log(`Tournament game ${gameId} completed.`);
+        console.log(`Tournament game ${gameId} completed. Releasing players.`);
         const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
   
         if (!tournamentId) return null;
@@ -628,9 +629,6 @@ export const submitMove = functions.https.onCall(async (data, context) => {
             activeGameId: null
           })
           .commit();
-  
-        console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
-        await pairAndCreateMatches(tournamentId);
       }
   
       return null;
@@ -1253,3 +1251,4 @@ export const bootstrapMakeAdmin = functions.https.onRequest(async (req, res) => 
         res.status(500).send("Error setting admin claim. Check function logs.");
     }
 });
+
