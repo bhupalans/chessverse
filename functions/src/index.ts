@@ -270,7 +270,7 @@ function getBotMove(game: Chess, difficulty: string): string | null {
 
 // --- TOURNAMENT LOGIC ---
 
-async function pairAndCreateMatches(tournamentId: string) {
+async function startTournamentArena(tournamentId: string) {
     console.log(`Starting pairing for tournament: ${tournamentId}`);
     const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
     const tournamentDoc = await tournamentRef.get();
@@ -282,7 +282,7 @@ async function pairAndCreateMatches(tournamentId: string) {
     }
 
     const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
-    const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('score', 'desc').get();
+    const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('eloRating', 'desc').get();
 
     if (playersSnapshot.empty) {
         console.log(`No available players to pair in tournament ${tournamentId}.`);
@@ -641,7 +641,7 @@ export const submitMove = functions.https.onCall(async (data, context) => {
           .commit();
   
         console.log(`Scores updated for tournament ${tournamentId}. Triggering re-pairing.`);
-        await pairAndCreateMatches(tournamentId);
+        await startTournamentArena(tournamentId);
       }
   
       return null;
@@ -1136,7 +1136,7 @@ export const onTournamentStateChange = functions.firestore
         // locked -> live (Tournament actually starts here)
         if (before.state === 'locked' && after.state === 'live') {
             console.log(`Tournament ${tournamentId} is now live. Initiating pairings.`);
-            await pairAndCreateMatches(tournamentId);
+            await startTournamentArena(tournamentId);
         }
         
         // live -> completed (Finalize results)

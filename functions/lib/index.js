@@ -313,6 +313,30 @@ async function pairAndCreateMatches(tournamentId) {
     }
     await batch.commit();
 }
+async function validateTournamentForStart(tournamentId, tournamentData) {
+    const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
+    const playersSnapshot = await playersRef.get();
+    const playerCount = playersSnapshot.size;
+    // Sync player count if it's incorrect. This is a corrective action, not a validation failure.
+    if (playerCount !== tournamentData.playerCount) {
+        console.warn(`Player count for tournament ${tournamentId} was out of sync. Correcting from ${tournamentData.playerCount} to ${playerCount}.`);
+        await firestore.collection('tournaments').doc(tournamentId).update({ playerCount: playerCount });
+        // Update the local data to continue validation with the correct count.
+        tournamentData.playerCount = playerCount;
+    }
+    // A tournament needs at least 2 players to start.
+    if (playerCount < 2) {
+        return { isValid: false, error: `Tournament ${tournamentId} cannot start with fewer than 2 players.` };
+    }
+    // Check if each player document is well-formed.
+    for (const playerDoc of playersSnapshot.docs) {
+        const playerData = playerDoc.data();
+        if (!playerData.uid || typeof playerData.eloRating !== 'number') {
+            return { isValid: false, error: `Invalid player data for player ${playerDoc.id} in tournament ${tournamentId}. Missing uid or eloRating.` };
+        }
+    }
+    return { isValid: true };
+}
 async function finalizeTournamentResults(tournamentId) {
     console.log(`Finalizing results for tournament ${tournamentId}`);
     const playersSnapshot = await firestore.collection(`tournaments/${tournamentId}/players`)
@@ -861,7 +885,7 @@ exports.joinTournament = functions.https.onCall(async (data, context) => {
                 throw new functions.https.HttpsError('failed-precondition', `Tournament is not open for registration. Current state: ${tournament.state}.`);
             }
             if (playerDoc.exists) {
-                throw new functions.https.HttpsError('already-exists', 'You have already joined this tournament.');
+                throw new functions.https.HttpsError('already-exists', 'User already joined tournament');
             }
             if (tournament.playerCount >= tournament.maxPlayers) {
                 throw new functions.https.HttpsError('failed-precondition', 'Tournament is full.');
@@ -976,14 +1000,21 @@ exports.onTournamentStateChange = functions.firestore
     const tournamentId = context.params.tournamentId;
     const before = change.before.data();
     const after = change.after.data();
-    // published -> locked -> live (immediate transition)
+    // published -> locked: Validate before going live.
     if (before.state === 'published' && after.state === 'locked') {
-        // Immediately transition to live after locking
-        console.log(`Tournament ${tournamentId} is locked. Transitioning to live.`);
-        await change.after.ref.update({
-            state: 'live',
-            liveSince: admin.firestore.FieldValue.serverTimestamp()
-        });
+        console.log(`Tournament ${tournamentId} is locked. Validating before start...`);
+        const validationResult = await validateTournamentForStart(tournamentId, Object.assign({}, after));
+        if (validationResult.isValid) {
+            console.log(`Validation passed for ${tournamentId}. Transitioning to live.`);
+            await change.after.ref.update({
+                state: 'live',
+                liveSince: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        else {
+            console.error(`Validation failed for tournament ${tournamentId}: ${validationResult.error}. Reverting to 'published' state.`);
+            await change.after.ref.update({ state: 'published' });
+        }
     }
     // locked -> live (Tournament actually starts here)
     if (before.state === 'locked' && after.state === 'live') {
