@@ -236,51 +236,41 @@ function getBotMove(game, difficulty) {
 }
 // --- TOURNAMENT LOGIC ---
 async function pairAndCreateMatches(tournamentId) {
-    var _a;
-    console.log(`Starting pairing for tournament: ${tournamentId}`);
+    console.log(`Running orchestrator for tournament: ${tournamentId}`);
     const tournamentRef = firestore.collection('tournaments').doc(tournamentId);
+    // 1. Validate tournament
     const tournamentDoc = await tournamentRef.get();
+    if (!tournamentDoc.exists || tournamentDoc.data().state !== 'live') {
+        console.log(`Tournament ${tournamentId} is not live. Halting orchestrator.`);
+        return;
+    }
     const tournamentData = tournamentDoc.data();
-    if (tournamentData.state !== 'live') {
-        console.log(`Tournament ${tournamentId} is not in 'live' state. Halting pairing.`);
+    // 2. Determine player availability
+    const playersRef = tournamentRef.collection('players');
+    const idlePlayersSnapshot = await playersRef.where('activeGameId', '==', null).get();
+    if (idlePlayersSnapshot.docs.length < 2) {
+        console.log(`Not enough idle players to pair in tournament ${tournamentId}.`);
         return;
     }
-    const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
-    const playersSnapshot = await playersRef.where('activeGameId', '==', null).orderBy('score', 'desc').get();
-    if (playersSnapshot.docs.length < 2) {
-        console.log(`No available players to pair in tournament ${tournamentId}.`);
-        return;
-    }
-    const availablePlayers = playersSnapshot.docs.map(doc => (Object.assign({ id: doc.id }, doc.data())));
-    const pairings = [];
-    const pairedIds = new Set();
-    for (const player of availablePlayers) {
-        if (pairedIds.has(player.id))
-            continue;
-        let bestMatch = null;
-        for (const opponent of availablePlayers) {
-            if (player.id === opponent.id || pairedIds.has(opponent.id))
-                continue;
-            if ((_a = player.hasPlayedAgainst) === null || _a === void 0 ? void 0 : _a.includes(opponent.id))
-                continue;
-            bestMatch = opponent; // Simple pairing: first available opponent
-            break;
-        }
-        if (bestMatch) {
-            pairings.push([player, bestMatch]);
-            pairedIds.add(player.id);
-            pairedIds.add(bestMatch.id);
-        }
-    }
-    if (pairings.length === 0) {
-        console.log(`No valid pairings found for tournament ${tournamentId}.`);
-        return;
-    }
+    // 3. Pairing Logic (Sort by wait time)
+    let availablePlayers = idlePlayersSnapshot.docs.map(doc => (Object.assign({ id: doc.id }, doc.data())));
+    availablePlayers.sort((a, b) => {
+        var _a, _b;
+        const timeA = ((_a = a.lastGameFinishedAt) === null || _a === void 0 ? void 0 : _a.toMillis()) || a.joinedAt.toMillis();
+        const timeB = ((_b = b.lastGameFinishedAt) === null || _b === void 0 ? void 0 : _b.toMillis()) || b.joinedAt.toMillis();
+        return timeA - timeB; // Ascending sort, oldest first
+    });
     const batch = firestore.batch();
-    for (const [player1, player2] of pairings) {
+    const pairingsToCommit = [];
+    // 4. Create games and lock players in a loop
+    while (availablePlayers.length >= 2) {
+        const player1 = availablePlayers.shift();
+        const player2 = availablePlayers.shift();
+        pairingsToCommit.push({ player1, player2 });
         const gameRef = firestore.collection('games').doc();
         const colors = Math.random() < 0.5 ? ['w', 'b'] : ['b', 'w'];
         const whitePlayer = colors[0] === 'w' ? player1 : player2;
+        // 4a. Create game document
         batch.set(gameRef, {
             player1Id: player1.id,
             player2Id: player2.id,
@@ -295,13 +285,21 @@ async function pairAndCreateMatches(tournamentId) {
             isTournamentGame: true,
             tournamentId: tournamentId,
         });
+        // 4b. Lock players
         const player1Ref = playersRef.doc(player1.id);
         const player2Ref = playersRef.doc(player2.id);
-        batch.update(player1Ref, { activeGameId: gameRef.id, hasPlayedAgainst: admin.firestore.FieldValue.arrayUnion(player2.id) });
-        batch.update(player2Ref, { activeGameId: gameRef.id, hasPlayedAgainst: admin.firestore.FieldValue.arrayUnion(player1.id) });
-        console.log(`Paired ${player1.username} vs ${player2.username} in game ${gameRef.id}`);
+        batch.update(player1Ref, { activeGameId: gameRef.id });
+        batch.update(player2Ref, { activeGameId: gameRef.id });
     }
-    await batch.commit();
+    if (pairingsToCommit.length > 0) {
+        await batch.commit();
+        pairingsToCommit.forEach(({ player1, player2 }) => {
+            console.log(`Paired ${player1.username} vs ${player2.username} in tournament ${tournamentId}.`);
+        });
+    }
+    if (availablePlayers.length > 0) {
+        console.log(`Player ${availablePlayers[0].username} is waiting for an opponent in tournament ${tournamentId}.`);
+    }
 }
 async function validateTournamentForStart(tournamentId, tournamentData) {
     const playersRef = firestore.collection(`tournaments/${tournamentId}/players`);
@@ -516,7 +514,7 @@ exports.onGameWrite = functions.firestore
     if ((beforeData === null || beforeData === void 0 ? void 0 : beforeData.status) === 'inprogress' &&
         (afterData === null || afterData === void 0 ? void 0 : afterData.status) === 'completed' &&
         afterData.isTournamentGame) {
-        console.log(`Tournament game ${gameId} completed. Releasing players.`);
+        console.log(`Tournament game ${gameId} completed. Releasing players and re-running orchestrator.`);
         const { tournamentId, player1Id, player2Id, winnerId, player1Color } = afterData;
         if (!tournamentId)
             return null;
@@ -547,14 +545,17 @@ exports.onGameWrite = functions.firestore
             .update(p1Ref, {
             score: admin.firestore.FieldValue.increment(p1score),
             gamesPlayed: admin.firestore.FieldValue.increment(1),
-            activeGameId: null
+            activeGameId: null,
+            lastGameFinishedAt: admin.firestore.FieldValue.serverTimestamp()
         })
             .update(p2Ref, {
             score: admin.firestore.FieldValue.increment(p2score),
             gamesPlayed: admin.firestore.FieldValue.increment(1),
-            activeGameId: null
+            activeGameId: null,
+            lastGameFinishedAt: admin.firestore.FieldValue.serverTimestamp()
         })
             .commit();
+        await pairAndCreateMatches(tournamentId);
     }
     return null;
 });
@@ -886,7 +887,8 @@ exports.joinTournament = functions.https.onCall(async (data, context) => {
                 score: 0,
                 gamesPlayed: 0,
                 activeGameId: null,
-                joinedAt: admin.firestore.FieldValue.serverTimestamp()
+                joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+                lastGameFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             transaction.update(tournamentRef, {
                 playerCount: admin.firestore.FieldValue.increment(1)
