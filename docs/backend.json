@@ -272,6 +272,18 @@
           "type": "string",
           "format": "date-time",
           "description": "Timestamp when the player joined."
+        },
+        "lastGameFinishedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp for when the player last finished a game. Used for pairing priority."
+        },
+        "hasPlayedAgainst": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of opponent UIDs this player has already faced."
         }
       },
       "required": [

@@ -129,5 +129,8 @@ export type TournamentPlayer = {
   gamesPlayed: number;
   activeGameId: string | null;
   joinedAt: Timestamp;
+  lastGameFinishedAt?: Timestamp;
   hasPlayedAgainst?: string[];
 };
+
+    
