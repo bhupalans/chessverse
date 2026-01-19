@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useAuth, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirebase, useCollection, useMemoFirebase } from '@/firebase';
 import {
   collection,
   query,
@@ -19,31 +20,91 @@ import { cn } from '@/lib/utils';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 export default function HistoryPage() {
-  const { user, isUserLoading } = useAuth();
-  const firestore = useFirestore();
+  // Use useFirebase() as requested, aliasing user and isUserLoading for clarity.
+  const { user: authUser, isUserLoading: authLoading, firestore } = useFirebase();
 
-  // Memoize the query to prevent re-renders, but only when user and firestore are available.
-  const gamesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-
-    // Fetch all completed games. Filtering for the user will happen on the client.
+  // Query for games where the user is player1
+  const gamesAsPlayer1Query = useMemoFirebase(() => {
+    if (!firestore || !authUser) return null;
     return query(
       collection(firestore, 'games'),
+      where('player1Id', '==', authUser.uid),
       where('status', '==', 'completed'),
       orderBy('completedAt', 'desc')
     );
-  }, [firestore, user]);
+  }, [firestore, authUser]);
 
-  const { data: games, isLoading: areGamesLoading } = useCollection<Game>(gamesQuery);
+  // Query for games where the user is player2
+  const gamesAsPlayer2Query = useMemoFirebase(() => {
+    if (!firestore || !authUser) return null;
+    return query(
+      collection(firestore, 'games'),
+      where('player2Id', '==', authUser.uid),
+      where('status', '==', 'completed'),
+      orderBy('completedAt', 'desc')
+    );
+  }, [firestore, authUser]);
 
+  const { data: gamesAsP1, isLoading: isLoadingP1 } = useCollection<Game>(gamesAsPlayer1Query);
+  const { data: gamesAsP2, isLoading: isLoadingP2 } = useCollection<Game>(gamesAsPlayer2Query);
+
+  // Combine and sort the results from both queries
   const myGames = useMemo(() => {
-    if (!games || !user) return [];
-    return games.filter(g => g.player1?.id === user.uid || g.player2?.id === user.uid);
-  }, [games, user]);
+    if (!gamesAsP1 && !gamesAsP2) return null;
 
-  const isLoading = isUserLoading || areGamesLoading;
+    const allGames = [
+      ...(gamesAsP1 || []),
+      ...(gamesAsP2 || []),
+    ];
 
-  if (!isUserLoading && !user) {
+    // Deduplicate games in the rare case a user played against themselves
+    const uniqueGames = Array.from(new Map(allGames.map(game => [game.id, game])).values());
+
+    // Sort the combined list by completion date
+    uniqueGames.sort((a, b) => {
+      const timeA = a.completedAt?.seconds || 0;
+      const timeB = b.completedAt?.seconds || 0;
+      return timeB - timeA;
+    });
+
+    return uniqueGames;
+  }, [gamesAsP1, gamesAsP2]);
+
+  const isLoading = authLoading || (authUser && (isLoadingP1 || isLoadingP2));
+
+  // Main loading state while checking for user authentication
+  if (authLoading) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Game History</CardTitle>
+            <CardDescription>Review your past matches and analyze your performance.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Opponent</TableHead>
+                    <TableHead className="text-center">Result</TableHead>
+                    <TableHead className="text-center">ELO Change</TableHead>
+                    <TableHead className="text-right">Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Array.from({ length: 5 }).map((_, i) => renderSkeletonRow(i))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // State for unauthenticated users
+  if (!authUser) {
     return (
       <div className="container mx-auto p-4 sm:p-6 lg:p-8">
         <Card>
@@ -62,9 +123,9 @@ export default function HistoryPage() {
   }
 
   const renderGameRow = (game: Game) => {
-    if (!user) return null;
+    if (!authUser) return null;
 
-    const isPlayer1 = game.player1.id === user.uid;
+    const isPlayer1 = game.player1.id === authUser.uid;
     const opponent = isPlayer1 ? game.player2 : game.player1;
     const myColor = isPlayer1 ? game.player1Color : game.player2Color;
     const myEloBefore = myColor === 'w' ? game.whiteEloBefore : game.blackEloBefore;
@@ -74,7 +135,8 @@ export default function HistoryPage() {
     let resultVariant: 'default' | 'destructive' | 'secondary' = 'secondary';
     
     if (game.winnerId && game.winnerId !== 'd') {
-      if (game.winnerId === myColor) {
+      const iAmWinner = (myColor === 'w' && game.winnerId === 'w') || (myColor === 'b' && game.winnerId === 'b');
+      if (iAmWinner) {
         result = 'Win';
         resultVariant = 'default';
       } else {
@@ -161,9 +223,9 @@ export default function HistoryPage() {
               <TableBody>
                 {isLoading && Array.from({ length: 5 }).map((_, i) => renderSkeletonRow(i))}
                 
-                {!isLoading && myGames.length > 0 && myGames.map(renderGameRow)}
+                {!isLoading && myGames && myGames.length > 0 && myGames.map(renderGameRow)}
 
-                {!isLoading && myGames.length === 0 && (
+                {!isLoading && (!myGames || myGames.length === 0) && (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center">
                       You have no completed games yet.
