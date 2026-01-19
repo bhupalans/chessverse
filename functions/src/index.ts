@@ -1255,5 +1255,3 @@ export const bootstrapMakeAdmin = functions.https.onRequest(async (req, res) => 
         res.status(500).send("Error setting admin claim. Check function logs.");
     }
 });
-
-    
