@@ -45,7 +45,12 @@ export default function LobbyPage() {
 
     // Effect for tournament data (live/published)
     useEffect(() => {
-        if (!firestore) return;
+        if (!firestore || !user){
+            setIsTournamentLoading(false);
+            setActiveTournament(null);
+            setIsPlayerInTournament(false);
+            return;
+        }
         setIsTournamentLoading(true);
 
         const fetchTournamentData = async () => {
