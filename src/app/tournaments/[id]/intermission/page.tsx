@@ -2,13 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Trophy } from 'lucide-react';
-import type { Tournament } from '@/lib/types';
-
 
 const INTERMISSION_DURATION = 30; // seconds
 
@@ -20,22 +18,8 @@ export default function TournamentIntermissionPage() {
 
     const tournamentId = Array.isArray(params.id) ? params.id[0] : (params.id as string);
 
-    const tournamentDocRef = useMemoFirebase(() => {
-        if (!firestore || !tournamentId) return null;
-        return doc(firestore, 'tournaments', tournamentId);
-    }, [firestore, tournamentId]);
-
-    const { data: tournament, isLoading: isTournamentLoading } = useDoc<Tournament>(tournamentDocRef);
-
     const [countdown, setCountdown] = useState(INTERMISSION_DURATION);
     const [status, setStatus] = useState<'countdown' | 'checking' | 'waiting' | 'completed'>('countdown');
-
-    // Effect to react to tournament completion
-    useEffect(() => {
-        if (tournament?.state === 'completed' || tournament?.state === 'archived') {
-            setStatus('completed');
-        }
-    }, [tournament]);
 
     // Countdown effect
     useEffect(() => {
@@ -60,7 +44,10 @@ export default function TournamentIntermissionPage() {
         let pollInterval: NodeJS.Timeout | undefined;
 
         const checkForGame = async () => {
-            if (!user || !firestore || !tournamentId) return;
+            if (!user || !firestore || !tournamentId) {
+                setStatus('completed');
+                return;
+            };
 
             const playerDocRef = doc(firestore, 'tournaments', tournamentId, 'players', user.uid);
             try {
@@ -83,7 +70,7 @@ export default function TournamentIntermissionPage() {
                 }
             } catch (error) {
                 // Permissions error or other failure, assume tournament is over.
-                console.error("Defensive check for next game failed, assuming tournament is over:", error);
+                console.log("Defensive check for next game failed, assuming tournament is over:", error);
                 setStatus('completed');
                 if (pollInterval) clearInterval(pollInterval);
             }
@@ -107,7 +94,7 @@ export default function TournamentIntermissionPage() {
 
 
     const renderContent = () => {
-        if (isUserLoading || isTournamentLoading) {
+        if (isUserLoading) {
              return <Loader2 className="h-16 w-16 animate-spin text-primary" />;
         }
         
