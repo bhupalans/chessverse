@@ -1,6 +1,7 @@
 'use client';
-import { useDoc, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
-import { collection, doc, query, orderBy } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { useFirestore } from '@/firebase';
+import { collection, doc, query, orderBy, getDoc, getDocs } from 'firebase/firestore';
 import { useParams } from 'next/navigation';
 import { Tournament, TournamentPlayer } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,24 +24,71 @@ function TournamentResultsClient() {
   const tournamentId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const tournamentRef = useMemoFirebase(() => {
-    if (!firestore || !tournamentId) return null;
-    return doc(firestore, 'tournaments', tournamentId);
+  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [players, setPlayers] = useState<TournamentPlayer[] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+
+  useEffect(() => {
+    if (!firestore || !tournamentId) {
+      setIsLoading(false);
+      return;
+    };
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const tournamentRef = doc(firestore, 'tournaments', tournamentId);
+        const tournamentSnap = await getDoc(tournamentRef);
+
+        if (!tournamentSnap.exists()) {
+          setError("Tournament results are unavailable.");
+          setTournament(null);
+          setPlayers(null);
+          setIsLoading(false);
+          return;
+        }
+
+        const tournamentData = { id: tournamentSnap.id, ...tournamentSnap.data() } as Tournament;
+        setTournament(tournamentData);
+        
+        const playersCollection = collection(firestore, 'tournaments', tournamentId, 'players');
+        const playersQuery = query(playersCollection, orderBy('score', 'desc'));
+        const playersSnap = await getDocs(playersQuery);
+        
+        const playersData = playersSnap.docs.map(d => ({ id: d.id, ...d.data() }) as TournamentPlayer);
+        setPlayers(playersData);
+
+      } catch (err) {
+        console.error("Error fetching tournament results:", err);
+        setError("Tournament results are unavailable.");
+        setTournament(null);
+        setPlayers(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+
   }, [firestore, tournamentId]);
 
-  const { data: tournament, isLoading: isTournamentLoading } = useDoc<Tournament>(tournamentRef);
 
-  const playersQuery = useMemoFirebase(() => {
-    if (!firestore || !tournamentId) return null;
-    
-    const playersCollection = collection(firestore, 'tournaments', tournamentId, 'players');
-    return query(playersCollection, orderBy('score', 'desc'));
-  }, [firestore, tournamentId]);
-
-  const { data: players, isLoading: arePlayersLoading } = useCollection<TournamentPlayer>(playersQuery);
-
-  if (isTournamentLoading) {
+  if (isLoading) {
     return <Skeleton className="h-96 w-full" />;
+  }
+
+  if (error) {
+     return (
+       <div className="text-center">
+         <h2 className="text-xl font-semibold">{error}</h2>
+         <Button asChild className="mt-4">
+             <Link href="/tournaments">Back to Tournaments</Link>
+         </Button>
+       </div>
+     );
   }
 
   if (!tournament) {
@@ -56,7 +104,7 @@ function TournamentResultsClient() {
   
   const isCompleted = tournament.state === 'completed' || tournament.state === 'archived';
 
-  if (!isCompleted && !arePlayersLoading) {
+  if (!isCompleted && !isLoading) {
       return (
            <div className="text-center">
                 <h2 className="text-xl font-semibold">Tournament Results Not Available</h2>
@@ -116,7 +164,7 @@ function TournamentResultsClient() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {arePlayersLoading && Array.from({length: 10}).map((_, i) => (
+                        {isLoading && Array.from({length: 10}).map((_, i) => (
                              <TableRow key={i}>
                                 <TableCell><Skeleton className="h-5 w-5 mx-auto" /></TableCell>
                                 <TableCell>
@@ -130,7 +178,7 @@ function TournamentResultsClient() {
                                 <TableCell className="text-center"><Skeleton className="h-5 w-12 mx-auto" /></TableCell>
                              </TableRow>
                         ))}
-                        {!arePlayersLoading && players?.map((player, index) => (
+                        {!isLoading && players?.map((player, index) => (
                             <TableRow key={player.id}>
                                 <TableCell className="font-bold text-center">{index + 1}</TableCell>
                                 <TableCell>
@@ -146,7 +194,7 @@ function TournamentResultsClient() {
                                 <TableCell className="text-center">{player.gamesPlayed}</TableCell>
                             </TableRow>
                         ))}
-                         {!arePlayersLoading && players?.length === 0 && (
+                         {!isLoading && players?.length === 0 && (
                             <TableRow>
                                 <TableCell colSpan={5} className="text-center h-24">No players participated in this tournament.</TableCell>
                             </TableRow>
