@@ -18,6 +18,7 @@ export type User = {
   wins: number;
   losses: number;
   draws: number;
+  activeGameId?: string;
   lastSeen?: Timestamp;
 };
 

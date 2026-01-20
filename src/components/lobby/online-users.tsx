@@ -10,46 +10,79 @@ import {
 } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { User as UserType } from '@/lib/types';
-import { useCollection, useFirestore, useUser, useMemoFirebase } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { useFirestore, useUser } from '@/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
 import { Skeleton } from '../ui/skeleton';
 import { InviteButton } from './invite-button';
-import { PlaceHolderImages } from '@/lib/placeholder-images';
+import { Button } from '@/components/ui/button';
 
 export function OnlineUsers() {
   const firestore = useFirestore();
   const { user, isUserLoading } = useUser();
+  const [onlineUsers, setOnlineUsers] = useState<UserType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const usersQuery = useMemoFirebase(() => {
-    // Only create the query if the user is logged in and firestore is available.
-    if (!firestore || !user) return null;
-    return query(collection(firestore, 'users'), where('onlineStatus', '==', 'online'));
+  useEffect(() => {
+    if (!firestore) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    const q = query(
+      collection(firestore, 'users'),
+      where('onlineStatus', '==', 'online')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const usersData: UserType[] = [];
+        querySnapshot.forEach((doc) => {
+          usersData.push({ id: doc.id, ...doc.data() } as UserType);
+        });
+
+        // Filter out the current user if they are logged in
+        const otherUsers = user
+          ? usersData.filter((onlineUser) => onlineUser.id !== user.uid)
+          : usersData;
+
+        setOnlineUsers(otherUsers);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching online users:', error);
+        setIsLoading(false);
+        // Do not throw UI errors
+      }
+    );
+
+    return () => unsubscribe();
   }, [firestore, user]);
 
-  const { data: onlineUsers, isLoading } = useCollection<UserType>(usersQuery);
-
-  const otherUsers = onlineUsers?.filter(onlineUser => onlineUser.id !== user?.uid);
+  const showLoadingState = isLoading || isUserLoading;
 
   if (!isUserLoading && !user) {
     return (
-        <div className="rounded-lg border">
-            <Table>
-                <TableHeader>
-                <TableRow>
-                    <TableHead>Player</TableHead>
-                    <TableHead className="hidden sm:table-cell">ELO</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
-                        Please log in to see online users.
-                        </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
-        </div>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Player</TableHead>
+              <TableHead className="hidden sm:table-cell">ELO</TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
+                Please log in to see online users.
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
     );
   }
 
@@ -64,7 +97,7 @@ export function OnlineUsers() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(isLoading || isUserLoading) && (
+          {showLoadingState &&
             Array.from({ length: 3 }).map((_, i) => (
               <TableRow key={i}>
                 <TableCell>
@@ -80,35 +113,36 @@ export function OnlineUsers() {
                   <Skeleton className="h-9 w-24 ml-auto" />
                 </TableCell>
               </TableRow>
-            ))
-          )}
-          {!isLoading && !isUserLoading && otherUsers && otherUsers.length === 0 && (
+            ))}
+          {!showLoadingState && onlineUsers.length === 0 && (
             <TableRow>
               <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
                 No other players are online right now.
               </TableCell>
             </TableRow>
           )}
-          {!isLoading && !isUserLoading && otherUsers?.map((otherUser) => (
-            <TableRow key={otherUser.id}>
-              <TableCell>
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-9 w-9">
-                    <AvatarImage src={otherUser.avatarUrl || PlaceHolderImages[0].imageUrl} alt="Avatar" />
-                    <AvatarFallback>{otherUser.username.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="font-medium">{otherUser.username}</div>
-                </div>
-              </TableCell>
-              <TableCell className="hidden sm:table-cell">{otherUser.eloRating || 1200}</TableCell>
-              <TableCell className="text-right">
-                <InviteButton
-                  inviter={user}
-                  invitee={otherUser}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
+          {!showLoadingState &&
+            onlineUsers.map((otherUser) => (
+              <TableRow key={otherUser.id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={otherUser.avatarUrl} alt="Avatar" />
+                      <AvatarFallback>{otherUser.username.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="font-medium">{otherUser.username}</div>
+                  </div>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell">{otherUser.eloRating || 1200}</TableCell>
+                <TableCell className="text-right">
+                  {otherUser.activeGameId ? (
+                    <Button size="sm" disabled>In Game</Button>
+                  ) : (
+                    <InviteButton inviter={user} invitee={otherUser} />
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
         </TableBody>
       </Table>
     </div>

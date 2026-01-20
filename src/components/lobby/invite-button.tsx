@@ -132,7 +132,7 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
           size="sm"
           disabled={!inviter}
         >
-          Invite
+          Challenge
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-60">
@@ -154,7 +154,7 @@ export function InviteButton({ inviter, invitee }: InviteButtonProps) {
                 </div>
               ))}
             </RadioGroup>
-          <Button onClick={handleInvite}>Send Invite</Button>
+          <Button onClick={handleInvite}>Send Challenge</Button>
         </div>
       </PopoverContent>
     </Popover>

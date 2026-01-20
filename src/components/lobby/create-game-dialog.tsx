@@ -178,7 +178,7 @@ export function CreateGameDialog() {
       <DialogTrigger asChild>
         <Button>
           <PlusCircle className="mr-2 h-4 w-4" />
-          Create Game
+          New Game
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
