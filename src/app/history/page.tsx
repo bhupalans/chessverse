@@ -1,5 +1,6 @@
 'use client';
 
+import { Trophy } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { useFirebase } from '@/firebase';
@@ -265,11 +266,20 @@ function GameRow({ game, userId }: { game: Game; userId: string }) {
             </AvatarFallback>
           </Avatar>
           <div>
-            <div className="font-medium">{opponent?.username}</div>
-            <div className="text-sm text-muted-foreground">
-              ELO {opponent?.eloRating ?? '—'}
-            </div>
-          </div>
+  <div className="flex items-center gap-2 font-medium">
+    {Boolean(game.tournamentId || game.isTournamentGame) && (
+      <Trophy
+        className="h-4 w-4 text-amber-400"
+        title="Tournament game"
+      />
+    )}
+    <span>{opponent?.username}</span>
+  </div>
+  <div className="text-sm text-muted-foreground">
+    ELO {opponent?.eloRating ?? '—'}
+  </div>
+</div>
+
         </div>
       </TableCell>
 

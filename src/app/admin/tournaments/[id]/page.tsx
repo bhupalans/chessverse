@@ -60,6 +60,10 @@ function TournamentDetailsClient() {
   }
   
   const isPreTournament = tournament.state === 'draft' || tournament.state === 'published';
+  const isCompleted = tournament.state === 'completed' || tournament.state === 'archived';
+  const winner = isCompleted && players && players.length > 0 ? players[0] : null;
+  const runnerUp = isCompleted && players && players.length > 1 ? players[1] : null;
+
 
   return (
     <div className="space-y-6">
@@ -100,10 +104,28 @@ function TournamentDetailsClient() {
         <CardHeader>
             <CardTitle>Players</CardTitle>
             <CardDescription>
-                {tournament.state === 'completed' || tournament.state === 'archived' ? 'Final Standings' : (isPreTournament ? 'Players Joined' : 'Current Standings')}
+                {isCompleted ? 'Final Standings' : (isPreTournament ? 'Players Joined' : 'Current Standings')}
             </CardDescription>
         </CardHeader>
         <CardContent>
+            {isCompleted && (winner || runnerUp) && (
+              <div className="mb-6 p-4 border rounded-lg bg-muted/50 space-y-3">
+                {winner && (
+                  <div className="flex items-center text-lg font-semibold">
+                    <span className="text-2xl mr-3">🏆</span>
+                    <span>Winner: {winner.username}</span>
+                    <span className="text-muted-foreground ml-auto text-base font-normal">Score: {winner.score}</span>
+                  </div>
+                )}
+                {runnerUp && (
+                  <div className="flex items-center text-md font-medium text-foreground/90">
+                     <span className="text-xl mr-3">🥈</span>
+                     <span>Runner-up: {runnerUp.username}</span>
+                     <span className="text-muted-foreground ml-auto text-sm font-normal">Score: {runnerUp.score}</span>
+                  </div>
+                )}
+              </div>
+            )}
              <div className="rounded-lg border">
                  <Table>
                     <TableHeader>

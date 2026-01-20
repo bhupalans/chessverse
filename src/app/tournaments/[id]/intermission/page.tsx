@@ -17,6 +17,7 @@ export default function TournamentIntermissionPage() {
     const firestore = useFirestore();
 
     const tournamentId = Array.isArray(params.id) ? params.id[0] : (params.id as string);
+    const [hasWaitedOnce, setHasWaitedOnce] = useState(false);
 
     const [countdown, setCountdown] = useState(INTERMISSION_DURATION);
     const [status, setStatus] = useState<'countdown' | 'checking' | 'waiting' | 'completed'>('countdown');
@@ -54,16 +55,27 @@ export default function TournamentIntermissionPage() {
                 const playerDocSnap = await getDoc(playerDocRef);
                 if (playerDocSnap.exists()) {
                     const playerData = playerDocSnap.data();
+                
+                    // ✅ Game found → redirect
                     if (playerData.activeGameId) {
                         router.push(`/game/${playerData.activeGameId}`);
                         if (pollInterval) clearInterval(pollInterval);
-                        return; // Stop polling
+                        return;
                     }
-                    // If no active game, set to waiting (if not already)
-                    if (status !== 'waiting') {
+                
+                    // ✅ First miss → waiting
+                    if (!hasWaitedOnce) {
+                        setHasWaitedOnce(true);
                         setStatus('waiting');
+                        return;
                     }
-                } else {
+                
+                    // ✅ Second miss → tournament over
+                    setStatus('completed');
+                    if (pollInterval) clearInterval(pollInterval);
+                    return;
+                }
+                 else {
                     // Player document doesn't exist, assume tournament is over.
                     setStatus('completed');
                     if (pollInterval) clearInterval(pollInterval);
