@@ -3,11 +3,13 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useUser, useFirestore } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Trophy } from 'lucide-react';
+import type { Tournament } from '@/lib/types';
+
 
 const INTERMISSION_DURATION = 30; // seconds
 
@@ -19,8 +21,22 @@ export default function TournamentIntermissionPage() {
 
     const tournamentId = Array.isArray(params.id) ? params.id[0] : (params.id as string);
 
+    const tournamentDocRef = useMemoFirebase(() => {
+        if (!firestore || !tournamentId) return null;
+        return doc(firestore, 'tournaments', tournamentId);
+    }, [firestore, tournamentId]);
+
+    const { data: tournament, isLoading: isTournamentLoading } = useDoc<Tournament>(tournamentDocRef);
+
     const [countdown, setCountdown] = useState(INTERMISSION_DURATION);
-    const [status, setStatus] = useState<'countdown' | 'checking' | 'waiting'>('countdown');
+    const [status, setStatus] = useState<'countdown' | 'checking' | 'waiting' | 'completed'>('countdown');
+
+    // Effect to react to tournament completion
+    useEffect(() => {
+        if (tournament?.state === 'completed' || tournament?.state === 'archived') {
+            setStatus('completed');
+        }
+    }, [tournament]);
 
     // Countdown effect
     useEffect(() => {
@@ -40,6 +56,8 @@ export default function TournamentIntermissionPage() {
 
     // Check for game effect (polling)
     useEffect(() => {
+        if (status !== 'checking' && status !== 'waiting') return;
+        
         let pollInterval: NodeJS.Timeout | undefined;
 
         const checkForGame = async () => {
@@ -84,7 +102,7 @@ export default function TournamentIntermissionPage() {
 
 
     const renderContent = () => {
-        if (isUserLoading) {
+        if (isUserLoading || isTournamentLoading) {
              return <Loader2 className="h-16 w-16 animate-spin text-primary" />;
         }
         
@@ -100,6 +118,11 @@ export default function TournamentIntermissionPage() {
                             <div className="text-sm text-muted-foreground">Next round in</div>
                             <div className="text-6xl font-bold tabular-nums">{countdown}</div>
                         </CardContent>
+                        <CardFooter>
+                            <Button variant="secondary" className="w-full" onClick={() => router.push('/tournaments')}>
+                                Leave Tournament
+                            </Button>
+                        </CardFooter>
                     </>
                 );
             case 'checking':
@@ -113,8 +136,30 @@ export default function TournamentIntermissionPage() {
                         <CardContent className="flex justify-center py-8">
                            <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />
                         </CardContent>
+                        <CardFooter>
+                             <Button variant="secondary" className="w-full" onClick={() => router.push('/tournaments')}>
+                                Leave Tournament
+                            </Button>
+                        </CardFooter>
                     </>
-                )
+                );
+            case 'completed':
+                 return (
+                    <>
+                        <CardHeader>
+                            <CardTitle>Tournament Over</CardTitle>
+                            <CardDescription>The tournament has finished. Thanks for playing!</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex justify-center py-8">
+                           <Trophy className="h-12 w-12 text-amber-400" />
+                        </CardContent>
+                        <CardFooter>
+                            <Button className="w-full" onClick={() => router.push('/tournaments')}>
+                                Back to Tournaments
+                            </Button>
+                        </CardFooter>
+                    </>
+                );
         }
     };
     
@@ -122,11 +167,6 @@ export default function TournamentIntermissionPage() {
         <div className="container mx-auto h-[calc(100vh-3.5rem)] flex items-center justify-center p-4">
              <Card className="w-full max-w-md text-center">
                 {renderContent()}
-                <CardFooter>
-                    <Button variant="secondary" className="w-full" onClick={() => router.push('/tournaments')}>
-                        Leave Tournament
-                    </Button>
-                </CardFooter>
             </Card>
         </div>
     )

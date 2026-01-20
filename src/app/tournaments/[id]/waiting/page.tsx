@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Button } from "@/components/ui/button";
@@ -5,9 +6,9 @@ import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
-import type { TournamentPlayer } from '@/lib/types';
+import type { Tournament, TournamentPlayer } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Trophy } from 'lucide-react';
 
 function TournamentWaitingRoom() {
   const params = useParams();
@@ -22,7 +23,14 @@ function TournamentWaitingRoom() {
     return doc(firestore, 'tournaments', tournamentId, 'players', user.uid);
   }, [firestore, user?.uid, tournamentId]);
 
+  const tournamentDocRef = useMemoFirebase(() => {
+    if (!firestore || !tournamentId) return null;
+    return doc(firestore, 'tournaments', tournamentId);
+  }, [firestore, tournamentId]);
+  
   const { data: playerDoc, isLoading: isPlayerDocLoading } = useDoc<TournamentPlayer>(playerDocRef);
+  const { data: tournament, isLoading: isTournamentLoading } = useDoc<Tournament>(tournamentDocRef);
+
 
   useEffect(() => {
     if (playerDoc?.activeGameId) {
@@ -30,7 +38,7 @@ function TournamentWaitingRoom() {
     }
   }, [playerDoc, router]);
 
-  if (isUserLoading || isPlayerDocLoading) {
+  if (isUserLoading || isPlayerDocLoading || isTournamentLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
@@ -54,6 +62,25 @@ function TournamentWaitingRoom() {
          </Card>
        </div>
      );
+  }
+
+  if (tournament?.state === 'completed' || tournament?.state === 'archived') {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <CardTitle>Tournament Over</CardTitle>
+            <CardDescription>
+              This tournament has finished.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center flex-col items-center gap-4">
+             <Trophy className="h-12 w-12 text-amber-400" />
+            <Button onClick={() => router.push('/tournaments')}>View All Tournaments</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

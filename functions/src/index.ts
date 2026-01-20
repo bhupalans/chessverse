@@ -1180,10 +1180,41 @@ export const onTournamentStateChange = functions.firestore
             await pairAndCreateMatches(tournamentId);
         }
         
-        // live -> completed (Finalize results)
+        // live -> completed (Finalize results & cleanup pending games)
         if (before.state === 'live' && after.state === 'completed') {
-            console.log(`Tournament ${tournamentId} has completed. Finalizing results.`);
+            console.log(`Tournament ${tournamentId} has completed. Finalizing results and cleaning up.`);
+            
+            // 1. Finalize results
             await finalizeTournamentResults(tournamentId);
+
+            // 2. Clean up any 'pending' games
+            const pendingGamesQuery = firestore.collection('games')
+                .where('tournamentId', '==', tournamentId)
+                .where('status', '==', 'pending');
+
+            const pendingGamesSnapshot = await pendingGamesQuery.get();
+
+            if (!pendingGamesSnapshot.empty) {
+                console.log(`Found ${pendingGamesSnapshot.size} pending games to clean up for tournament ${tournamentId}.`);
+                const cleanupBatch = firestore.batch();
+                
+                for (const gameDoc of pendingGamesSnapshot.docs) {
+                    const gameData = gameDoc.data();
+                    cleanupBatch.delete(gameDoc.ref); // Cancel the pending game
+
+                    // Release players
+                    if (gameData.player1Id) {
+                        const player1Ref = firestore.doc(`tournaments/${tournamentId}/players/${gameData.player1Id}`);
+                        cleanupBatch.update(player1Ref, { activeGameId: null });
+                    }
+                    if (gameData.player2Id) {
+                        const player2Ref = firestore.doc(`tournaments/${tournamentId}/players/${gameData.player2Id}`);
+                        cleanupBatch.update(player2Ref, { activeGameId: null });
+                    }
+                }
+                await cleanupBatch.commit();
+                console.log(`Cleaned up pending games and released players for tournament ${tournamentId}.`);
+            }
         }
     });
 
