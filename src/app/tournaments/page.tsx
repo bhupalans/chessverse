@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Users, Clock, Loader2 } from 'lucide-react';
+import { Users, Clock, Loader2, Trophy } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Tournament, TimeControl, TournamentPlayer } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -80,6 +80,15 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
   const isFull = tournament.playerCount >= tournament.maxPlayers;
 
   const renderFooter = () => {
+    if (tournament.state === 'completed' || tournament.state === 'archived') {
+      return (
+        <Button className="w-full" onClick={() => router.push(`/tournaments/${tournament.id}/results`)}>
+          <Trophy className="mr-2 h-4 w-4" />
+          View Results
+        </Button>
+      );
+    }
+
     if (isPlayerLoading) {
       return (
         <Button className="w-full" disabled>
@@ -129,13 +138,21 @@ function TournamentCard({ tournament }: { tournament: Tournament }) {
     return null;
   };
 
+  const badgeText = tournament.state === 'completed' || tournament.state === 'archived'
+    ? 'Archived'
+    : tournament.state.charAt(0).toUpperCase() + tournament.state.slice(1);
+
+  const badgeVariant = tournament.state === 'live' 
+    ? 'destructive' 
+    : (tournament.state === 'completed' || tournament.state === 'archived' ? 'secondary' : 'default');
+
   return (
     <Card className="flex flex-col">
       <CardHeader>
          <div className="flex justify-between items-start">
           <CardTitle>{tournament.name}</CardTitle>
-          <Badge variant={tournament.state === 'live' ? 'destructive' : 'default'}>
-            {tournament.state.charAt(0).toUpperCase() + tournament.state.slice(1)}
+          <Badge variant={badgeVariant}>
+            {badgeText}
           </Badge>
         </div>
         <CardDescription className="flex items-center gap-1 text-sm">
@@ -165,13 +182,13 @@ export default function TournamentsPage() {
 
   const tournamentsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'tournaments'), orderBy('startTime', 'asc'));
+    return query(collection(firestore, 'tournaments'), orderBy('startTime', 'desc'));
   }, [firestore]);
 
   const { data: allTournaments, isLoading: areTournamentsLoading } = useCollection<Tournament>(tournamentsQuery);
 
   const visibleTournaments = useMemo(() => {
-    return allTournaments?.filter(t => t.state === 'published' || t.state === 'live') || [];
+    return allTournaments?.filter(t => t.state !== 'draft') || [];
   }, [allTournaments]);
   
   const renderSkeletonCard = (key: number) => (
@@ -203,7 +220,7 @@ export default function TournamentsPage() {
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <div className="mb-8">
          <h1 className="text-3xl font-bold tracking-tight">Tournaments</h1>
-         <p className="text-muted-foreground">Join an upcoming arena tournament.</p>
+         <p className="text-muted-foreground">Join an upcoming arena tournament or view past results.</p>
       </div>
       
       {areTournamentsLoading && (
