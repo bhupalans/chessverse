@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -73,14 +72,20 @@ export default function TournamentIntermissionPage() {
                         if (pollInterval) clearInterval(pollInterval);
                         return; // Stop polling
                     }
-                }
-                // If no active game, set to waiting (if not already)
-                if (status !== 'waiting') {
-                    setStatus('waiting');
+                    // If no active game, set to waiting (if not already)
+                    if (status !== 'waiting') {
+                        setStatus('waiting');
+                    }
+                } else {
+                    // Player document doesn't exist, assume tournament is over.
+                    setStatus('completed');
+                    if (pollInterval) clearInterval(pollInterval);
                 }
             } catch (error) {
-                console.error("Error checking for next game:", error);
-                // Handle error, maybe show a message and a retry button
+                // Permissions error or other failure, assume tournament is over.
+                console.error("Defensive check for next game failed, assuming tournament is over:", error);
+                setStatus('completed');
+                if (pollInterval) clearInterval(pollInterval);
             }
         };
 
